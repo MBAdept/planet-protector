@@ -1,0 +1,209 @@
+extends Node2D
+## Game HUD (docs/SPEC.md §1, §10, §15): slim top bar (≤ 44 px, never covers the enemy lanes) with SCORE,
+## LIVES, LEVEL + name, DIFFICULTY and TIME (MM:SS.t); bonus counters in the ground strip; level intro
+## banner, level-clear banner, respawn hint and the pause overlay.
+
+const FxTex := preload("res://scripts/game/fx_tex.gd")
+
+const BAR_H := 40.0
+const C_LABEL := Color(0.58, 0.66, 0.82, 0.9)
+const C_VALUE := Color(0.93, 0.96, 1.0)
+const C_ACCENT := Color(1.0, 0.68, 0.25)
+
+var world: GameWorld
+var level := 1
+var paused := false
+var anim := 0.0             ## real seconds (banner animation)
+var clear_time := -1.0      ## real seconds since the level goal was reached (−1 = not yet)
+var respawn_time := -1.0
+
+var _f_label: Font
+var _f_value: Font
+var _f_big: Font
+var _f_body: Font
+var _bar_tex: GradientTexture2D
+var _icon: Texture2D
+var _accent := Color(0.4, 0.7, 1.0)
+var _planet := "neptune"
+
+
+func _ready() -> void:
+	_f_label = _spaced(Assets.font_body_bold, 2)
+	_f_value = Assets.font_title
+	_f_big = _spaced(Assets.font_title_heavy, 3)
+	_f_body = _spaced(Assets.font_body_bold, 1)
+	var g := Gradient.new()
+	g.offsets = PackedFloat32Array([0.0, 0.62, 1.0])
+	g.colors = PackedColorArray([Color(0.01, 0.015, 0.04, 0.82), Color(0.01, 0.015, 0.04, 0.6), Color(0.01, 0.015, 0.04, 0.0)])
+	_bar_tex = GradientTexture2D.new()
+	_bar_tex.gradient = g
+	_bar_tex.fill_to = Vector2(0, 1)
+	_bar_tex.width = 4
+	_bar_tex.height = 64
+	_planet = LevelData.planet_of(level)
+
+
+func _spaced(base: Font, spacing: int) -> Font:
+	var fv := FontVariation.new()
+	fv.base_font = base
+	fv.spacing_glyph = spacing
+	return fv
+
+
+func _draw() -> void:
+	if world == null:
+		return
+	_draw_top_bar()
+	if world.is_bonus():
+		_draw_bonus_counters()
+	_draw_banners()
+	if paused:
+		_draw_pause()
+
+
+# --- Top bar -------------------------------------------------------------------------------------
+func _draw_top_bar() -> void:
+	draw_texture_rect(_bar_tex, Rect2(0, 0, LevelData.SCREEN_W, BAR_H + 6.0), false)
+	var atm: Color = preload("res://scripts/game/backdrop.gd").atmosphere(_planet)
+	draw_texture_rect(FxTex.band(), Rect2(0, BAR_H - 1.0, LevelData.SCREEN_W, 2.0), false, Color(atm.r, atm.g, atm.b, 0.35))
+	var ly := 14.0
+	var vy := 35.0
+	# SCORE
+	_label(Vector2(18, ly), "SCORE")
+	_value(Vector2(18, vy), "%07d" % maxi(Run.score, 0), 19, C_VALUE)
+	# LIVES
+	_label(Vector2(160, ly), "LIVES")
+	_draw_lives(Vector2(160, 21), Run.lives)
+	# LEVEL + name (centre)
+	var lvl_name := String(LevelData.level(level)["name"]).to_upper()
+	_label(Vector2(480, ly), "LEVEL %d" % level, HORIZONTAL_ALIGNMENT_CENTER, C_ACCENT)
+	var size := 17
+	while size > 11 and _f_value.get_string_size(lvl_name, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x > 330.0:
+		size -= 1
+	_value(Vector2(480, vy), lvl_name, size, C_VALUE, HORIZONTAL_ALIGNMENT_CENTER)
+	# DIFFICULTY
+	_label(Vector2(700, ly), "DIFFICULTY")
+	_value(Vector2(700, vy), Run.difficulty_name(), 14, _difficulty_color())
+	# TIME
+	_label(Vector2(942, ly), "TIME", HORIZONTAL_ALIGNMENT_RIGHT)
+	_value(Vector2(942, vy), Fmt.time(Run.active_time), 19, C_VALUE, HORIZONTAL_ALIGNMENT_RIGHT)
+
+
+func _difficulty_color() -> Color:
+	match Run.difficulty:
+		0:
+			return Color(0.55, 0.95, 0.6)
+		1:
+			return Color(0.6, 0.85, 1.0)
+		2:
+			return Color(1.0, 0.75, 0.35)
+	return Color(1.0, 0.42, 0.38)
+
+
+func _draw_lives(pos: Vector2, n: int) -> void:
+	if _icon == null:
+		_icon = Assets.ship_texture(Run.ship_id)
+		_accent = ShipData.ship(Run.ship_id)["accent"]
+	var sz := Vector2(_icon.get_width(), _icon.get_height()) * 0.2
+	var shown := mini(n, 5)
+	for i in shown:
+		var p := pos + Vector2(float(i) * (sz.x + 3.0), 0)
+		draw_texture_rect(_icon, Rect2(p, sz), false)
+	if n > 5:
+		_value(pos + Vector2(float(shown) * (sz.x + 3.0) + 2.0, 14.0), "×%d" % n, 13, C_VALUE)
+	elif n <= 0:
+		_value(pos + Vector2(0, 14.0), "—", 13, C_LABEL)
+
+
+func _label(pos: Vector2, s: String, align := HORIZONTAL_ALIGNMENT_LEFT, col := C_LABEL) -> void:
+	UiKit.text(self, _f_label, pos, s, 10, col, align)
+
+
+func _value(pos: Vector2, s: String, size: int, col: Color, align := HORIZONTAL_ALIGNMENT_LEFT) -> void:
+	UiKit.text(self, _f_value, pos, s, size, col, align)
+
+
+# --- Bonus level counters (ground strip) ---------------------------------------------------------
+func _draw_bonus_counters() -> void:
+	var y := LevelData.GROUND_Y + (LevelData.SCREEN_H - LevelData.GROUND_Y) * 0.5
+	var r := Rect2(300, y - 13.0, 360, 26)
+	draw_rect(r, Color(0.01, 0.015, 0.04, 0.72))
+	draw_rect(r, Color(1.0, 0.68, 0.25, 0.35), false, 1.0)
+	_label(Vector2(318, y + 4.0), "SHOTS LEFT")
+	var shots_col := C_VALUE if world.attempts > 10 else Color(1.0, 0.45, 0.35)
+	_value(Vector2(410, y + 6.5), "%d" % world.attempts, 16, shots_col)
+	_label(Vector2(498, y + 4.0), "HITS")
+	_value(Vector2(540, y + 6.5), "%d/%d" % [mini(world.destroyed, LevelData.BONUS_TARGET), LevelData.BONUS_TARGET], 16, C_ACCENT)
+
+
+# --- Banners -------------------------------------------------------------------------------------
+func _draw_banners() -> void:
+	if world.state == GameWorld.State.INTRO:
+		_draw_intro(world.intro_time)
+	elif clear_time >= 0.0:
+		_draw_clear(clear_time)
+	elif respawn_time >= 0.0 and world.state == GameWorld.State.RESPAWN:
+		var a := clampf((respawn_time - 0.35) * 4.0, 0.0, 1.0)
+		if a > 0.0:
+			UiKit.text(self, _f_big, Vector2(480, 380), "GET READY", 30, Color(1, 1, 1, 0.85 * a), HORIZONTAL_ALIGNMENT_CENTER)
+			var lives_txt := "%d %s LEFT" % [world.lives, "SHIP" if world.lives == 1 else "SHIPS"]
+			UiKit.text(self, _f_body, Vector2(480, 410), lives_txt, 16, Color(C_LABEL, 0.9 * a), HORIZONTAL_ALIGNMENT_CENTER)
+
+
+func _banner_alpha(t: float, total: float, fade_in := 0.25, fade_out := 0.3) -> float:
+	return clampf(t / fade_in, 0.0, 1.0) * clampf((total - t) / fade_out, 0.0, 1.0)
+
+
+func _draw_intro(t: float) -> void:
+	var total := LevelData.INTRO_TIME
+	var a := _banner_alpha(t, total)
+	var e := 1.0 - pow(1.0 - clampf(t / 0.45, 0.0, 1.0), 3.0)
+	var cy := 330.0
+	# Light band sweeping across.
+	var band_w := LevelData.SCREEN_W * (0.35 + 0.65 * e)
+	draw_texture_rect(FxTex.band(), Rect2(480.0 - band_w * 0.5, cy - 70.0, band_w, 140.0), false, Color(0.02, 0.03, 0.08, 0.75 * a))
+	draw_texture_rect(FxTex.band(), Rect2(480.0 - band_w * 0.5, cy - 58.0, band_w, 3.0), false, Color(C_ACCENT, 0.7 * a))
+	draw_texture_rect(FxTex.band(), Rect2(480.0 - band_w * 0.5, cy + 55.0, band_w, 3.0), false, Color(C_ACCENT, 0.7 * a))
+	if world.is_bonus():
+		UiKit.text(self, _f_label, Vector2(480, cy - 30.0), "LEVEL %d  ·  BONUS ROUND" % level, 13, Color(C_ACCENT, a), HORIZONTAL_ALIGNMENT_CENTER)
+		_glow_text(Vector2(480, cy + 10.0), LevelData.BONUS_TITLE, 40, a, e)
+		UiKit.text(self, _f_body, Vector2(480, cy + 42.0), "100 shots – destroy 20 demons", 20, Color(C_VALUE, a), HORIZONTAL_ALIGNMENT_CENTER)
+	else:
+		var planet_name: String = LevelData.PLANET_NAMES[_planet]
+		UiKit.text(self, _f_label, Vector2(480, cy - 34.0), planet_name.to_upper() + "  ·  " + Run.difficulty_name(), 12,
+			Color(C_ACCENT, a), HORIZONTAL_ALIGNMENT_CENTER)
+		_glow_text(Vector2(480, cy + 12.0), "LEVEL %d" % level, 54, a, e)
+		UiKit.text(self, _f_body, Vector2(480, cy + 44.0), String(LevelData.level(level)["name"]).to_upper(), 20,
+			Color(C_VALUE, a), HORIZONTAL_ALIGNMENT_CENTER)
+
+
+func _glow_text(pos: Vector2, s: String, size: int, a: float, e: float) -> void:
+	var w := _f_big.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x
+	var p := pos - Vector2(w * 0.5, 0) + Vector2((1.0 - e) * 40.0, 0)
+	draw_string_outline(_f_big, p, s, HORIZONTAL_ALIGNMENT_LEFT, -1, size, 14, Color(1.0, 0.45, 0.1, 0.16 * a))
+	draw_string_outline(_f_big, p, s, HORIZONTAL_ALIGNMENT_LEFT, -1, size, 6, Color(1.0, 0.55, 0.15, 0.35 * a))
+	draw_string(_f_big, p, s, HORIZONTAL_ALIGNMENT_LEFT, -1, size, Color(1.0, 0.97, 0.9, a))
+
+
+func _draw_clear(t: float) -> void:
+	var a := clampf(t / 0.2, 0.0, 1.0)
+	var e := 1.0 - pow(1.0 - clampf(t / 0.35, 0.0, 1.0), 3.0)
+	var cy := 330.0
+	draw_texture_rect(FxTex.band(), Rect2(0, cy - 50.0, LevelData.SCREEN_W, 100.0), false, Color(0.02, 0.03, 0.08, 0.6 * a))
+	var title := "BONUS COMPLETE" if world.is_bonus() else "LEVEL CLEAR"
+	_glow_text(Vector2(480, cy + 8.0), title, 40, a, e)
+	if world.state == GameWorld.State.COMPLETE:
+		var sub := "BONUS  +%d" % world.completion_bonus
+		if world.extra_life_awarded:
+			sub += "   ·   EXTRA LIFE"
+		UiKit.text(self, _f_body, Vector2(480, cy + 38.0), sub, 18, Color(C_ACCENT, a), HORIZONTAL_ALIGNMENT_CENTER)
+
+
+# --- Pause ---------------------------------------------------------------------------------------
+func _draw_pause() -> void:
+	draw_rect(Rect2(0, 0, LevelData.SCREEN_W, LevelData.SCREEN_H), Color(0.0, 0.01, 0.03, 0.62))
+	var cy := 320.0
+	draw_texture_rect(FxTex.band(), Rect2(0, cy - 90.0, LevelData.SCREEN_W, 180.0), false, Color(0.03, 0.05, 0.12, 0.8))
+	_glow_text(Vector2(480, cy - 10.0), "PAUSED", 56, 1.0, 1.0)
+	UiKit.text(self, _f_body, Vector2(480, cy + 36.0), "P / ESC / START   resume", 20, C_VALUE, HORIZONTAL_ALIGNMENT_CENTER)
+	UiKit.text(self, _f_body, Vector2(480, cy + 64.0), "Q / BACK   quit to title", 20, C_LABEL, HORIZONTAL_ALIGNMENT_CENTER)

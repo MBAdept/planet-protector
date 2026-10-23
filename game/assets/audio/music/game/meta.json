@@ -1,0 +1,36 @@
+{
+	"rate": 44100,
+	"bpm": 200.0,
+	"frames_per_quarter": 13230,
+	"frames_per_bar": 52920,
+	"bass_base_hz": 41.203,
+	"bass_notes": 41,
+	"bass_note_frames": 13230,
+	"samples": {
+		"kick": {
+			"file": "kick.raw",
+			"channels": 1,
+			"frames": 12789
+		},
+		"snare": {
+			"file": "snare.raw",
+			"channels": 2,
+			"frames": 30870
+		},
+		"hat": {
+			"file": "hat.raw",
+			"channels": 1,
+			"frames": 5292
+		},
+		"atmos": {
+			"file": "atmos.raw",
+			"channels": 2,
+			"frames": 211680
+		},
+		"bass": {
+			"file": "bass.raw",
+			"channels": 1,
+			"frames": 542430
+		}
+	}
+}

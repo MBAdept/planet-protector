@@ -1,0 +1,5 @@
+game/.godot/
+build/
+*.blend1
+__pycache__/
+docs/previews/
