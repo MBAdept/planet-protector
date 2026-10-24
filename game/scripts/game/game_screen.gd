@@ -6,6 +6,10 @@ extends Node2D
 ## Attract mode (demo, SPEC §11.1): setup({"attract": {"seed": s, "level": n (0 = random)}}). An AttractDirector
 ## plays the level with the autopilot; the screen never touches Run and makes no sound (the title music keeps
 ## playing); any player input ends it. Emits finished("end") when the demo is over, finished("exit") on input.
+## Pause (SPEC §12): P/Escape/Start resume, Q/Back quit to the title; up/down selects MUSIC VOLUME / EFFECTS
+## VOLUME, left/right changes it (persisted, applied at once). A direction held when the pause opens does not
+## step a volume, and a movement held when it closes is ignored until released (no volume steps or ship moves
+## leak through). Fire is not guarded: a fire button held through the pause fires again at once (hold-to-fire).
 
 signal finished(result: String, data: Dictionary)
 
@@ -26,10 +30,14 @@ const MAX_FRAME_DT := 0.5
 const AUTOPLAY_SLICE := 1.0 / 60.0
 const OUTRO_DELAY := 0.7           ## real seconds after COMPLETE before the screen changes
 const GAME_OVER_DELAY := 0.6
+## Rows of the pause overlay (Settings volume items).
+const PAUSE_ITEMS: Array[String] = ["music_volume", "sfx_volume"]
 
 var level := 1
 var world: GameWorld
 var paused := false
+## Selected row of the pause overlay (index into PAUSE_ITEMS); kept between pauses.
+var pause_sel := 0
 ## Attract mode (demo): the director owns the choreography, see AttractDirector.
 var attract := false
 var director: AttractDirector
@@ -50,6 +58,8 @@ var _anim := 0.0
 var _sfx_this_frame := {}
 var _enemy_nodes := {}             # enemy id → EnemyArt
 var _input_seen := false           # attract: a player input event arrived since the last frame
+var _move_guard := false           # after resuming: movement ignored until the held direction is released
+var _pause_dir_guard := false      # in the pause: auto-repeat of a direction held since before it is ignored
 
 var _stars: Starfield
 var _root: Node2D
@@ -160,6 +170,8 @@ func _process(delta: float) -> void:
 			_set_paused(false)
 		elif InputRouter.quit_pressed():
 			_finish("quit")
+		else:
+			_pause_menu()
 		_hud.queue_redraw()
 		return
 	if not world.is_finished() and InputRouter.pause_pressed():
@@ -176,7 +188,7 @@ func _process(delta: float) -> void:
 			world.update(slice, d.x, d.y > 0.5)
 			left -= slice
 	else:
-		world.update(dt, InputRouter.move_axis(), InputRouter.fire_held())
+		world.update(dt, _move_axis(), InputRouter.fire_held())
 	var game_dt := dt * world.speed_factor if world.state != GameWorld.State.INTRO else 0.0
 	_last_axis = clampf((world.player_x - prev_x) / maxf(LevelData.PLAYER_SPEED * game_dt, 1e-6), -1.0, 1.0) if game_dt > 0.0 else 0.0
 	_anim += dt
@@ -208,12 +220,61 @@ func _process_attract(delta: float) -> void:
 func _set_paused(p: bool) -> void:
 	paused = p
 	_hud.paused = p
+	_hud.pause_sel = pause_sel
 	_stars.velocity = Vector2.ZERO if p else Vector2(0, 6)
+	# Direction guards only (no require_release(): that would also latch held fire buttons, and hold-to-fire must
+	# go on after a resume). P/Escape/Start/Q/Back are edge-triggered, so a held one does nothing anyway.
 	if p:
+		_pause_dir_guard = true
 		audio.set_game_music_suspended(true)
-	elif world.state == GameWorld.State.PLAYING:
-		audio.set_game_music_suspended(false)
+	else:
+		_move_guard = InputRouter.move_axis() != 0.0
+		if world.state == GameWorld.State.PLAYING:
+			audio.set_game_music_suspended(false)
 	_hud.queue_redraw()
+
+
+## Player movement; after a resume a direction still held from the pause counts only once it was released.
+func _move_axis() -> float:
+	var axis := InputRouter.move_axis()
+	if _move_guard:
+		if axis != 0.0:
+			return 0.0
+		_move_guard = false
+	return axis
+
+
+## Pause overlay: up/down selects a volume row, left/right steps it by 10 % (controlled menu repeat, clamped).
+## A direction held since before the pause (e.g. the ship's movement) only produces auto-repeat steps here; they
+## are ignored until the first fresh press, so the held direction acts only after it was released and pressed again.
+func _pause_menu() -> void:
+	var dir := InputRouter.menu_direction()
+	if dir == Vector2i.ZERO:
+		return
+	if _pause_dir_guard:
+		if InputRouter.menu_direction_is_repeat():
+			return
+		_pause_dir_guard = false
+	if dir.y != 0:
+		pause_sel = posmod(pause_sel + dir.y, PAUSE_ITEMS.size())
+		_hud.pause_sel = pause_sel
+		_sfx("menu_move")
+	elif dir.x != 0:
+		change_volume(PAUSE_ITEMS[pause_sel], dir.x)
+
+
+## One volume step from the pause overlay: persisted by Settings and applied to the buses at once. EFFECTS
+## VOLUME plays the preview effect at the new gain; MUSIC VOLUME only a menu blip (the game music is paused).
+## Returns false at 0 % / 100 % (no change, no sound).
+func change_volume(item: String, dir: int) -> bool:
+	if not Settings.step_volume(item, dir):
+		return false
+	audio.apply_settings()
+	if item == "sfx_volume":
+		_sfx(AudioManagerScript.VOLUME_PREVIEW_SFX)
+	else:
+		_sfx("menu_move")
+	return true
 
 
 func _sync_run() -> void:

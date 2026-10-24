@@ -99,6 +99,13 @@ Loudness targets (≈LUFS, BS.1770 K-weighting) balance the mix: frequent sounds
   `AudioEffectHardLimiter` (ceiling −1 dB) sits on Master as a safety net (verified: output never exceeds −1 dBFS).
 - `apply_settings()` mutes the buses from `Settings.music_on` / `Settings.sfx_on` immediately; connected to
   `Settings.changed` and applied at start. `process_mode = ALWAYS` (works while the tree is paused).
+- **Player volumes** (SPEC §14, title menu + pause overlay): `Settings.music_volume` / `sfx_volume` (0–100 % in 10 %
+  steps, default 100 % = the mix described here) set the gain of the Music / SFX bus in `apply_settings()` via
+  `volume_db()`: amplitude = v² (`VOLUME_CURVE_EXP`), i.e. 100 % 0 dB, 70 % −6.2, 50 % −12, 30 % −20.9, 10 % −40 dB,
+  0 % mutes the bus. Loudness grows roughly with amplitude^0.6, so v² gives evenly sized perceived steps (a linear gain
+  would change the top half of the scale by only ~1 dB per step). The gain is never above 0 dB, so the limiter guarantee
+  holds; MUSIC / SOUND EFFECTS OFF mute on top. The arrival screen fades and mutes the SFX bus relative to the player's
+  gain and calls `apply_settings()` again when it ends. `VOLUME_PREVIEW_SFX` (`shot_laser`) is the preview on a change.
 - SFX pool: 12 `AudioStreamPlayer`s, max **3 simultaneous per name** (the oldest of that name restarts), streams
   cached at startup. When the pool is full the oldest sound of the lowest priority is replaced (equal priority
   may replace, lower may not: then the new sound is dropped); long stingers and the player explosion have high

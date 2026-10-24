@@ -3,6 +3,9 @@ extends Node
 ## effects, the bass-progress logic and the bus setup. See docs/AUDIO.md.
 ##
 ## - Buses "Music" and "SFX" are created at runtime if missing; a hard limiter sits on Master.
+## - Player volumes (Settings.music_volume / sfx_volume, 0–100 %) set the Music / SFX bus gain with the curve of
+##   volume_db() (amplitude = v², 100 % = 0 dB = the original mix, 0 % = mute); MUSIC / SOUND EFFECTS OFF mute
+##   the bus regardless of the volume. Never above 0 dB, so the limiter guarantee is unchanged.
 ## - Title music: looping OGG (assets/audio/music/title.ogg).
 ## - Game music: sample-accurate runtime sequencer at 200 BPM (1 bar = 1.2 s = 52920 frames @ 44.1 kHz).
 ##   Kick on every quarter, snare on beat 3, hats on 8ths with a velocity groove (4-bar cycle) and a quiet
@@ -62,6 +65,15 @@ const HAT_PAN_OFF := 0.15
 const TITLE_VOLUME_DB := -4.0
 const GAME_VOLUME_DB := -2.0
 const MASTER_CEILING_DB := -1.0
+## Player volume curve: amplitude = (percent / 100) ^ VOLUME_CURVE_EXP, i.e. 40·log10(v) dB:
+## 100 % = 0 dB, 90 % = −1.8, 70 % = −6.2, 50 % = −12, 30 % = −20.9, 10 % = −40 dB, 0 % = mute.
+## (Loudness grows roughly with amplitude^0.6, so v² gives evenly sized perceived steps; a linear gain
+## would leave the upper half of the scale nearly inaudible as a change.)
+const VOLUME_CURVE_EXP := 2.0
+## Bus gain written for 0 % (the bus is muted as well).
+const VOLUME_MUTE_DB := -80.0
+## Sound played when the player changes EFFECTS VOLUME (title menu, pause): a short, typical game effect.
+const VOLUME_PREVIEW_SFX := "shot_laser"
 
 # --- SFX pool -------------------------------------------------------------------------------------
 const SFX_POOL_SIZE := 12
@@ -251,15 +263,33 @@ func play_sfx(sfx_name: String, volume_db: float = 0.0, pitch: float = 1.0) -> v
 	_sfx_slot_serial[slot] = _sfx_serial
 
 
-## Re-reads Settings.music_on / Settings.sfx_on and applies them immediately.
+## Re-reads Settings.music_on / sfx_on and music_volume / sfx_volume and applies them immediately: bus gain
+## from the volume (volume_db), bus mute when the option is OFF or the volume is 0 %.
+## (The arrival sequence fades/mutes the SFX bus on its own and calls this again when it ends.)
 func apply_settings() -> void:
 	_ensure_buses()
-	var m := AudioServer.get_bus_index(BUS_MUSIC)
-	var s := AudioServer.get_bus_index(BUS_SFX)
-	if m >= 0:
-		AudioServer.set_bus_mute(m, not Settings.music_on)
-	if s >= 0:
-		AudioServer.set_bus_mute(s, not Settings.sfx_on)
+	_apply_bus(AudioServer.get_bus_index(BUS_MUSIC), Settings.music_on, Settings.music_volume)
+	_apply_bus(AudioServer.get_bus_index(BUS_SFX), Settings.sfx_on, Settings.sfx_volume)
+
+
+func _apply_bus(bus: int, on: bool, percent: int) -> void:
+	if bus < 0:
+		return
+	AudioServer.set_bus_volume_db(bus, volume_db(percent))
+	AudioServer.set_bus_mute(bus, bus_muted(on, percent))
+
+
+## Bus gain in dB for a player volume in percent (curve: VOLUME_CURVE_EXP). 0 % → VOLUME_MUTE_DB.
+static func volume_db(percent: int) -> float:
+	if percent <= 0:
+		return VOLUME_MUTE_DB
+	var v := clampf(percent / 100.0, 0.0, 1.0)
+	return maxf(linear_to_db(pow(v, VOLUME_CURVE_EXP)), VOLUME_MUTE_DB)
+
+
+## True if a bus is silent: its ON/OFF option is OFF (whatever the volume) or its volume is 0 %.
+static func bus_muted(on: bool, percent: int) -> bool:
+	return not on or percent <= 0
 
 
 # --- Read-only helpers (UI / tests) ---------------------------------------------------------------

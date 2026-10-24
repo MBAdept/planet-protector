@@ -1,5 +1,7 @@
 extends Node
 ## Autoload "Settings": persistent options and the four highscore lists (docs/SPEC.md §11, §13).
+## Volumes (SPEC §14): MUSIC VOLUME / EFFECTS VOLUME in percent, 0–100 in VOLUME_STEP steps, default 100 (the
+## original mix). They scale the Music / SFX bus (AudioManager.volume_db); the ON/OFF options still mute on top.
 
 signal changed
 
@@ -9,11 +11,20 @@ const LIST_SIZE := 10
 const NAME_MAX := 5
 const NAME_CHARS := "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
 const DEFAULT_NAME := "PILOT"
+const VOLUME_STEP := 10
+const VOLUME_MAX := 100
+const DEFAULT_VOLUME := 100
+## Menu item ids of the two volume options (title menu and pause overlay).
+const VOLUME_ITEMS: Array[String] = ["music_volume", "sfx_volume"]
 
 var difficulty := 1
 var music_on := true
 var sfx_on := true
 var fullscreen := false
+var music_volume := DEFAULT_VOLUME   ## percent, multiple of VOLUME_STEP
+var sfx_volume := DEFAULT_VOLUME     ## percent, multiple of VOLUME_STEP
+## File of the options (tests point it to a scratch file so the player's settings stay untouched).
+var settings_path := SETTINGS_PATH
 
 ## difficulty id (0..3) → Array of entries {name, score, time, level, ship}
 var _highscores := {0: [], 1: [], 2: [], 3: []}
@@ -27,11 +38,14 @@ func _ready() -> void:
 # --- Options -------------------------------------------------------------------------------------
 func load_settings() -> void:
 	var cfg := ConfigFile.new()
-	if cfg.load(SETTINGS_PATH) != OK:
+	if cfg.load(settings_path) != OK:
 		return
 	difficulty = clampi(int(cfg.get_value("game", "difficulty", difficulty)), 0, 3)
 	music_on = bool(cfg.get_value("audio", "music_on", music_on))
 	sfx_on = bool(cfg.get_value("audio", "sfx_on", sfx_on))
+	# Files written before the volume options existed have no keys: the default (100 %) is the old mix.
+	music_volume = clean_volume(cfg.get_value("audio", "music_volume", DEFAULT_VOLUME))
+	sfx_volume = clean_volume(cfg.get_value("audio", "sfx_volume", DEFAULT_VOLUME))
 	fullscreen = bool(cfg.get_value("video", "fullscreen", fullscreen))
 
 
@@ -40,8 +54,10 @@ func save_settings() -> void:
 	cfg.set_value("game", "difficulty", difficulty)
 	cfg.set_value("audio", "music_on", music_on)
 	cfg.set_value("audio", "sfx_on", sfx_on)
+	cfg.set_value("audio", "music_volume", music_volume)
+	cfg.set_value("audio", "sfx_volume", sfx_volume)
 	cfg.set_value("video", "fullscreen", fullscreen)
-	cfg.save(SETTINGS_PATH)
+	cfg.save(settings_path)
 
 
 func set_difficulty(value: int) -> void:
@@ -66,6 +82,53 @@ func set_fullscreen(value: bool) -> void:
 	fullscreen = value
 	save_settings()
 	changed.emit()
+
+
+## Sets MUSIC VOLUME (clamped to 0–100, snapped to VOLUME_STEP). Saves and emits `changed` only if the value
+## changed; returns whether it did (a step beyond 0 % / 100 % does nothing).
+func set_music_volume(percent: int) -> bool:
+	var v := clean_volume(percent)
+	if v == music_volume:
+		return false
+	music_volume = v
+	save_settings()
+	changed.emit()
+	return true
+
+
+## Sets EFFECTS VOLUME, see set_music_volume.
+func set_sfx_volume(percent: int) -> bool:
+	var v := clean_volume(percent)
+	if v == sfx_volume:
+		return false
+	sfx_volume = v
+	save_settings()
+	changed.emit()
+	return true
+
+
+## Current value of a volume item ("music_volume" / "sfx_volume").
+func volume(item: String) -> int:
+	return music_volume if item == "music_volume" else sfx_volume
+
+
+## The ON/OFF option that belongs to a volume item (MUSIC / SOUND EFFECTS); OFF silences it whatever the volume.
+func volume_switch_on(item: String) -> bool:
+	return music_on if item == "music_volume" else sfx_on
+
+
+## One menu step (dir = -1 / +1) of a volume item: ±VOLUME_STEP, clamped. True if the value changed.
+func step_volume(item: String, dir: int) -> bool:
+	var v := volume(item) + signi(dir) * VOLUME_STEP
+	return set_music_volume(v) if item == "music_volume" else set_sfx_volume(v)
+
+
+## A volume as stored: numbers are rounded to a multiple of VOLUME_STEP and clamped to 0–100; anything else
+## (a damaged file) falls back to DEFAULT_VOLUME.
+static func clean_volume(value: Variant) -> int:
+	if not (value is int or value is float):
+		return DEFAULT_VOLUME
+	return clampi(snappedi(roundi(float(value)), VOLUME_STEP), 0, VOLUME_MAX)
 
 
 # --- Highscores ----------------------------------------------------------------------------------

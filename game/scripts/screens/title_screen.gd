@@ -1,8 +1,10 @@
 extends ScreenBase
-## Title screen (docs/SPEC.md §11, §12): logo, menu START GAME / DIFFICULTY / MUSIC / SOUND EFFECTS /
-## HIGHSCORES / QUIT. Up/down selects, left/right changes values, confirm activates.
-## Keyboard: Enter/Space confirm, Escape quits. Controller: A/X/Y/Start confirm, Select/Back → highscores,
-## B is ignored. Options persist via Settings and act immediately.
+## Title screen (docs/SPEC.md §11, §12): logo, menu START GAME / DIFFICULTY / MUSIC / MUSIC VOLUME /
+## SOUND EFFECTS / EFFECTS VOLUME / HIGHSCORES / QUIT. Up/down selects, left/right changes values, confirm
+## activates. Keyboard: Enter/Space confirm, Escape quits. Controller: A/X/Y/Start confirm, Select/Back →
+## highscores, B is ignored. Options persist via Settings and act immediately.
+## Volumes (SPEC §14): left/right ±10 % with the controlled menu repeat; MUSIC VOLUME is heard live in the
+## title music, EFFECTS VOLUME plays a short preview effect at the new gain. Confirm on them only previews.
 ## Attract mode (SPEC §11.1): after AttractDirector.IDLE_TIME (90) real seconds without any player input (key,
 ## mouse button, joypad button, D-pad, stick beyond 0.5) the title hands over to the demo; any input restarts
 ## the idle timer.
@@ -11,14 +13,21 @@ extends ScreenBase
 
 const GAME_TITLE := "PLANET PROTECTOR"
 const TAGLINE := "DEFEND THE SOLAR SYSTEM"
-const ITEMS: Array[String] = ["start", "difficulty", "music", "sfx", "highscores", "quit"]
-const LABELS := {"start": "START GAME", "difficulty": "DIFFICULTY", "music": "MUSIC", "sfx": "SOUND EFFECTS",
-	"highscores": "HIGHSCORES", "quit": "QUIT"}
+const ITEMS: Array[String] = ["start", "difficulty", "music", "music_volume", "sfx", "sfx_volume", "highscores",
+	"quit"]
+const LABELS := {"start": "START GAME", "difficulty": "DIFFICULTY", "music": "MUSIC", "music_volume": "MUSIC VOLUME",
+	"sfx": "SOUND EFFECTS", "sfx_volume": "EFFECTS VOLUME", "highscores": "HIGHSCORES", "quit": "QUIT"}
 ## Binary ON/OFF items (left/right flips them).
 const TOGGLES: Array[String] = ["music", "sfx"]
-const MENU_Y := 384.0
-const MENU_STEP := 45.0
-const MENU_W := 430.0
+# Layout (960 × 720): logo + tagline on top, the 8-row menu panel, the two hint rows at the bottom.
+const LOGO_W := 620.0
+const LOGO_Y := 132.0           ## the letters start below the BEST line in the top-right corner
+const MENU_Y := 292.0
+const MENU_STEP := 41.0
+const MENU_W := 500.0
+const MENU_FONT := 19
+const MENU_PAD := 34.0          ## panel margin above the first / below the last row centre
+const HINT_Y := 664.0
 
 var _sel := 0
 var _demons: Array[Dictionary] = []
@@ -47,12 +56,12 @@ func _star_velocity() -> Vector2:
 
 
 func _spawn_demons() -> void:
-	# A few demons of different planets patrol the free space around the menu (like the game's lanes):
-	# one crossing between logo and menu, two guarding the sides of the menu panel.
+	# A few demons of different planets patrol the free space beside the menu panel (like the game's lanes):
+	# two on the left, one on the right.
 	var defs := [
-		{"level": 2, "y": 322.0, "x": 160.0, "dir": 1.0, "speed": 64.0, "scale": 0.6, "min": 40.0, "max": 920.0},
-		{"level": 11, "y": 455.0, "x": 120.0, "dir": 1.0, "speed": 38.0, "scale": 0.62, "min": 50.0, "max": 205.0},
-		{"level": 17, "y": 560.0, "x": 860.0, "dir": -1.0, "speed": 44.0, "scale": 0.62, "min": 755.0, "max": 910.0},
+		{"level": 2, "y": 335.0, "x": 70.0, "dir": 1.0, "speed": 30.0, "scale": 0.56, "min": 48.0, "max": 140.0},
+		{"level": 11, "y": 530.0, "x": 120.0, "dir": -1.0, "speed": 26.0, "scale": 0.56, "min": 48.0, "max": 140.0},
+		{"level": 17, "y": 430.0, "x": 880.0, "dir": -1.0, "speed": 28.0, "scale": 0.58, "min": 820.0, "max": 912.0},
 	]
 	for d: Dictionary in defs:
 		var e := EnemyArt.new()
@@ -117,7 +126,7 @@ func _update_idle(delta: float) -> bool:
 
 ## ON/OFF options flip once per press: auto-repeat steps of a held direction are ignored for them
 ## (otherwise holding Left/Right would flicker the setting and rewrite settings.cfg ~9x per second).
-## DIFFICULTY keeps cycling with the controlled repeat.
+## DIFFICULTY keeps cycling and the volumes keep stepping (clamped at 0 % / 100 %) with the controlled repeat.
 static func accepts_step(item: String, is_repeat: bool) -> bool:
 	return not (is_repeat and TOGGLES.has(item))
 
@@ -138,6 +147,17 @@ func _change(item: String, step: int) -> void:
 			Settings.set_sfx_on(not Settings.sfx_on)
 			AudioManager.apply_settings()
 			sfx("menu_move")
+		"music_volume", "sfx_volume":
+			if not Settings.step_volume(item, step):
+				return   # already at 0 % / 100 %
+			AudioManager.apply_settings()   # at once (Settings.changed does it too once the autoloads run)
+			_volume_feedback(item)
+
+
+## Sound after a volume change: the effects preview (at the new gain) for EFFECTS VOLUME; for MUSIC VOLUME
+## the title music itself is the feedback, plus the usual soft menu blip.
+func _volume_feedback(item: String) -> void:
+	sfx(AudioManager.VOLUME_PREVIEW_SFX if item == "sfx_volume" else "menu_move")
 
 
 func _activate(item: String) -> void:
@@ -151,6 +171,8 @@ func _activate(item: String) -> void:
 		"quit":
 			sfx("menu_back")
 			finish("quit")
+		"music_volume", "sfx_volume":
+			_volume_feedback(item)   # confirm does not change a volume (no accidental wrap to 0 %)
 		_:
 			_change(item, 1)
 
@@ -170,40 +192,49 @@ func _value(item: String) -> String:
 func _draw() -> void:
 	_draw_logo()
 	# Menu
-	var top := MENU_Y - 34.0
-	var rect := Rect2(CX - MENU_W * 0.5 - 40.0, top, MENU_W + 80.0, MENU_STEP * (ITEMS.size() - 1) + 68.0)
-	UiKit.panel(self, rect, 0.55)
+	UiKit.panel(self, menu_panel_rect(), 0.55)
 	for i in ITEMS.size():
 		var item := ITEMS[i]
 		var selected := i == _sel
-		var cy := MENU_Y + i * MENU_STEP
-		UiKit.menu_item(self, Vector2(CX, cy), LABELS[item], _value(item), selected, time, MENU_W, 20)
+		var c := Vector2(CX, MENU_Y + i * MENU_STEP)
+		if Settings.VOLUME_ITEMS.has(item):
+			# The bar is dimmed while the matching ON/OFF option is OFF.
+			UiKit.menu_item_volume(self, c, LABELS[item], Settings.volume(item), selected, time, MENU_W, MENU_FONT,
+				Settings.volume_switch_on(item))
+		else:
+			UiKit.menu_item(self, c, LABELS[item], _value(item), selected, time, MENU_W, MENU_FONT)
 	_draw_best()
 	_draw_hints()
+
+
+## Backing panel of the menu (all rows plus MENU_PAD above and below).
+static func menu_panel_rect() -> Rect2:
+	var top := MENU_Y - MENU_PAD
+	return Rect2(CX - MENU_W * 0.5 - 40.0, top, MENU_W + 80.0, MENU_STEP * (ITEMS.size() - 1) + MENU_PAD * 2.0)
 
 
 func _draw_logo() -> void:
 	var float_y := sin(time * 0.9) * 3.0
 	var logo := Assets.logo_texture()
-	var center := Vector2(CX, 150.0 + float_y)
-	UiKit.glow_spot(self, center + Vector2(0, 8), Vector2(470, 150), Color(1.0, 0.35, 0.08, 0.13))
+	var center := Vector2(CX, LOGO_Y + float_y)
+	UiKit.glow_spot(self, center + Vector2(0, 8), Vector2(400, 128), Color(1.0, 0.35, 0.08, 0.13))
 	var bottom := 0.0
 	if logo:
-		var w := 760.0
+		var w := LOGO_W
 		var h := w * float(logo.get_height()) / float(logo.get_width())
 		draw_texture_rect(logo, Rect2(center - Vector2(w, h) * 0.5, Vector2(w, h)), false)
 		bottom = center.y + h * 0.5
 	else:
 		# Fallback while the rendered logo is missing: big fiery Orbitron lettering.
 		var font := Assets.font_title_heavy
-		var size := UiKit.fit_size(font, GAME_TITLE, 84, 780.0)
+		var size := UiKit.fit_size(font, GAME_TITLE, 72, LOGO_W)
 		var base := center.y + size * 0.36
 		UiKit.text_glow(self, font, Vector2(CX, base + 3.0), GAME_TITLE, size, Color(0.55, 0.08, 0.02),
 			Color(1.0, 0.3, 0.05), HORIZONTAL_ALIGNMENT_CENTER, 1.6)
 		UiKit.text(self, font, Vector2(CX, base), GAME_TITLE, size, Color(1.0, 0.78, 0.38),
 			HORIZONTAL_ALIGNMENT_CENTER)
 		bottom = center.y + size * 0.6
-	var tag_y := bottom + 30.0
+	var tag_y := bottom + 22.0
 	var half := UiKit.spaced_width(Assets.font_title, TAGLINE, 14, 6.0) * 0.5
 	UiKit.divider(self, Vector2(CX - half - 80, tag_y - 6), 130, Color(1.0, 0.6, 0.2, 0.7))
 	UiKit.divider(self, Vector2(CX + half + 80, tag_y - 6), 130, Color(1.0, 0.6, 0.2, 0.7))
@@ -222,9 +253,9 @@ func _draw_best() -> void:
 
 
 func _draw_hints() -> void:
-	UiKit.hint_bar(self, Vector2(CX, 670), [
+	UiKit.hint_bar(self, Vector2(CX, HINT_Y), [
 		[["UD"], "Select"], [["LR"], "Change"], [["ENTER", "pad:A"], "Confirm"],
 	], 14)
-	UiKit.hint_bar(self, Vector2(CX, 698), [
+	UiKit.hint_bar(self, Vector2(CX, HINT_Y + 29.0), [
 		[["pad:BACK"], "Highscores"], [["ESC"], "Quit"], [["F11"], "Fullscreen"],
 	], 13, UiKit.COLOR_FAINT)

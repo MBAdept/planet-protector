@@ -1,7 +1,8 @@
 extends Node2D
 ## Game HUD (docs/SPEC.md §1, §10, §15): slim top bar (≤ 44 px, never covers the enemy lanes) with SCORE,
 ## LIVES, LEVEL + name, DIFFICULTY and TIME (MM:SS.t); bonus counters in the ground strip; level intro
-## banner, level-clear banner, respawn hint and the pause overlay. Attract mode (demo, SPEC §11.1): the values
+## banner, level-clear banner, respawn hint and the pause overlay (with the MUSIC / EFFECTS VOLUME rows, SPEC
+## §12/§14; GameScreen handles their input). Attract mode (demo, SPEC §11.1): the values
 ## come from the demo world (a demo never writes Run), plus the DEMO / PRESS ANY BUTTON overlay.
 
 const FxTex := preload("res://scripts/game/fx_tex.gd")
@@ -12,10 +13,23 @@ const C_VALUE := Color(0.93, 0.96, 1.0)
 const C_ACCENT := Color(1.0, 0.68, 0.25)
 const ATTRACT_DEMO_Y := 80.0       ## demo label: between the top bar and the top lane (enemies reach up to y ≈ 125)
 const ATTRACT_BLINK_HZ := 0.8
+# Pause overlay: volume rows (GameScreen.PAUSE_ITEMS order) with a caption under each.
+const PAUSE_ROW_Y := 282.0         ## centre of the first row
+const PAUSE_ROW_STEP := 66.0
+const PAUSE_ROW_W := 520.0
+const PAUSE_CAPTION_DY := 35.0     ## caption baseline below its row centre
+## Rows: item, label, caption while the sound is on (the game music is silent during a pause by rule),
+## caption while its ON/OFF option is OFF (then the bar is dimmed).
+const PAUSE_ROWS := [
+	["music_volume", "MUSIC VOLUME", "Music is paused – it plays again when you resume",
+		"Music is switched off (title menu)"],
+	["sfx_volume", "EFFECTS VOLUME", "Every change plays a short preview", "Sound effects are switched off (title menu)"],
+]
 
 var world: GameWorld
 var level := 1
 var paused := false
+var pause_sel := 0          ## selected volume row of the pause overlay (GameScreen.PAUSE_ITEMS)
 var anim := 0.0             ## real seconds (banner animation)
 var clear_time := -1.0      ## real seconds since the level goal was reached (−1 = not yet)
 var respawn_time := -1.0
@@ -233,11 +247,23 @@ func _draw_clear(t: float) -> void:
 # --- Pause ---------------------------------------------------------------------------------------
 func _draw_pause() -> void:
 	draw_rect(Rect2(0, 0, LevelData.SCREEN_W, LevelData.SCREEN_H), Color(0.0, 0.01, 0.03, 0.62))
-	var cy := 320.0
-	draw_texture_rect(FxTex.band(), Rect2(0, cy - 90.0, LevelData.SCREEN_W, 180.0), false, Color(0.03, 0.05, 0.12, 0.8))
-	_glow_text(Vector2(480, cy - 10.0), "PAUSED", 56, 1.0, 1.0)
-	UiKit.text(self, _f_body, Vector2(480, cy + 36.0), "P / ESC / START   resume", 20, C_VALUE, HORIZONTAL_ALIGNMENT_CENTER)
-	UiKit.text(self, _f_body, Vector2(480, cy + 64.0), "Q / BACK   quit to title", 20, C_LABEL, HORIZONTAL_ALIGNMENT_CENTER)
+	draw_texture_rect(FxTex.band(), Rect2(0, 150.0, LevelData.SCREEN_W, 380.0), false, Color(0.03, 0.05, 0.12, 0.84))
+	_glow_text(Vector2(480, 222.0), "PAUSED", 56, 1.0, 1.0)
+	var top := PAUSE_ROW_Y - 36.0
+	var bottom := PAUSE_ROW_Y + (PAUSE_ROWS.size() - 1) * PAUSE_ROW_STEP + PAUSE_CAPTION_DY + 20.0
+	UiKit.panel(self, Rect2(480.0 - PAUSE_ROW_W * 0.5 - 40.0, top, PAUSE_ROW_W + 80.0, bottom - top), 0.8)
+	for i in PAUSE_ROWS.size():
+		var row: Array = PAUSE_ROWS[i]
+		var item := String(row[0])
+		var on := Settings.volume_switch_on(item)
+		var cy := PAUSE_ROW_Y + i * PAUSE_ROW_STEP
+		UiKit.menu_item_volume(self, Vector2(480, cy), String(row[1]), Settings.volume(item), i == pause_sel, anim,
+			PAUSE_ROW_W, 18, on)
+		UiKit.text(self, Assets.font_body, Vector2(480, cy + PAUSE_CAPTION_DY), String(row[2] if on else row[3]), 14,
+			Color(C_LABEL, 0.85), HORIZONTAL_ALIGNMENT_CENTER)
+	UiKit.hint_bar(self, Vector2(480, 438.0), [[["UD"], "Select"], [["LR"], "Volume"]], 14)
+	UiKit.text(self, _f_body, Vector2(480, 480.0), "P / ESC / START   resume", 20, C_VALUE, HORIZONTAL_ALIGNMENT_CENTER)
+	UiKit.text(self, _f_body, Vector2(480, 508.0), "Q / BACK   quit to title", 20, C_LABEL, HORIZONTAL_ALIGNMENT_CENTER)
 
 
 # --- Attract mode (demo) -------------------------------------------------------------------------

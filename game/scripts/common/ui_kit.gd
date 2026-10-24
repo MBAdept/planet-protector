@@ -14,6 +14,8 @@ const COLOR_GOLD := Color(1.0, 0.84, 0.36)
 const COLOR_DANGER := Color(1.0, 0.33, 0.25)
 const COLOR_PANEL := Color(0.025, 0.035, 0.085)
 const COLOR_BORDER := Color(0.4, 0.6, 1.0)
+## Segments of a volume bar (one per 10 %).
+const VOLUME_SEGMENTS := 10
 
 static var _styles := {}
 
@@ -268,20 +270,10 @@ static func lock_icon(ci: CanvasItem, center: Vector2, size: float, color: Color
 ## `t` is a running time for the subtle pulse of the selection bar.
 static func menu_item(ci: CanvasItem, center: Vector2, label: String, value: String, selected: bool,
 		t: float = 0.0, width: float = 440.0, size: int = 22) -> void:
-	var h := size * 1.9
-	var rect := Rect2(center.x - width * 0.5, center.y - h * 0.5, width, h)
+	var rect := menu_row_rect(center, width, size)
 	var font := Assets.font_title
 	if selected:
-		var pulse := 0.5 + 0.5 * sin(t * 4.0)
-		var fill := COLOR_HILITE
-		fill.a = 0.10 + 0.05 * pulse
-		var border := COLOR_HILITE
-		border.a = 0.55 + 0.25 * pulse
-		var glow := COLOR_HILITE
-		glow.a = 0.18
-		panel_ex(ci, rect, fill, border, int(h * 0.5), 1, glow, 12)
-		triangle(ci, Vector2(rect.position.x - 16, center.y), Vector2.RIGHT, 12, COLOR_HILITE)
-		triangle(ci, Vector2(rect.end.x + 16, center.y), Vector2.LEFT, 12, COLOR_HILITE)
+		_menu_row_highlight(ci, rect, t)
 	var col := COLOR_TEXT if selected else COLOR_DIM
 	var by := baseline_for(font, size, center.y)
 	if value == "":
@@ -298,6 +290,87 @@ static func menu_item(ci: CanvasItem, center: Vector2, label: String, value: Str
 	if selected:
 		var vw := text_width(font, value, size)
 		triangle(ci, Vector2(vx - vw - 14, center.y), Vector2.LEFT, 10, vcol)
+
+
+## Rectangle of a menu row (menu_item / menu_item_volume) centred at `center`.
+static func menu_row_rect(center: Vector2, width: float, size: int) -> Rect2:
+	var h := size * 1.9
+	return Rect2(center.x - width * 0.5, center.y - h * 0.5, width, h)
+
+
+## Pulsing selection pill of a menu row plus the two pointers outside it.
+static func _menu_row_highlight(ci: CanvasItem, rect: Rect2, t: float) -> void:
+	var h := rect.size.y
+	var cy := rect.get_center().y
+	var pulse := 0.5 + 0.5 * sin(t * 4.0)
+	var fill := COLOR_HILITE
+	fill.a = 0.10 + 0.05 * pulse
+	var border := COLOR_HILITE
+	border.a = 0.55 + 0.25 * pulse
+	var glow := COLOR_HILITE
+	glow.a = 0.18
+	panel_ex(ci, rect, fill, border, int(h * 0.5), 1, glow, 12)
+	triangle(ci, Vector2(rect.position.x - 16, cy), Vector2.RIGHT, 12, COLOR_HILITE)
+	triangle(ci, Vector2(rect.end.x + 16, cy), Vector2.LEFT, 12, COLOR_HILITE)
+
+
+## Volume row "LABEL   ◀ ▁▂▃▄▅▆▇ 70% ▶" in the look of menu_item: a VOLUME_SEGMENTS bar (volume_bar) and the
+## percentage in a fixed column, so nothing moves when the row is selected or the value changes.
+## enabled = false (the matching ON/OFF option is OFF) draws bar and value dimmed.
+static func menu_item_volume(ci: CanvasItem, center: Vector2, label: String, percent: int, selected: bool,
+		t: float = 0.0, width: float = 440.0, size: int = 22, enabled: bool = true) -> void:
+	var rect := menu_row_rect(center, width, size)
+	var font := Assets.font_title
+	if selected:
+		_menu_row_highlight(ci, rect, t)
+	var col := COLOR_TEXT if selected else COLOR_DIM
+	var by := baseline_for(font, size, center.y)
+	text(ci, font, Vector2(rect.position.x + 30.0, by), label, size, col)
+	var vcol := COLOR_ACCENT if selected else Color(COLOR_ACCENT, 0.75)
+	if not enabled:
+		vcol = COLOR_FAINT
+	# Value column exactly as in menu_item (right-aligned, moved left by the pointer when selected).
+	var vx := rect.end.x - 30.0
+	if selected:
+		triangle(ci, Vector2(vx - 4, center.y), Vector2.RIGHT, 10, vcol)
+		vx -= 18.0
+	text(ci, font, Vector2(vx, by), "%d%%" % percent, size, vcol, HORIZONTAL_ALIGNMENT_RIGHT)
+	var bar := volume_bar_rect(Vector2(vx - text_width(font, "100%", size) - size * 0.6, center.y), size)
+	volume_bar(ci, bar, percent, vcol, enabled)
+	if selected:
+		triangle(ci, Vector2(bar.position.x - 14, center.y), Vector2.LEFT, 10, vcol)
+
+
+## Rectangle of a volume bar whose right edge is at right_mid.x, vertically centred on right_mid.y; scaled
+## with the font size of its row.
+static func volume_bar_rect(right_mid: Vector2, size: int = 20) -> Rect2:
+	var seg := maxf(roundf(size * 0.42), 4.0)
+	var gap := maxf(roundf(size * 0.16), 2.0)
+	var w := seg * VOLUME_SEGMENTS + gap * (VOLUME_SEGMENTS - 1)
+	var h := roundf(size * 0.95)
+	return Rect2(right_mid.x - w, right_mid.y - h * 0.5, w, h)
+
+
+## 10-segment volume bar (one segment per 10 %) in `rect`: segments rise in height from left to right like a
+## volume ramp, lit ones in `color` (brighter towards the top), unlit ones as dim outlines.
+## enabled = false: everything faint (the sound is switched off).
+static func volume_bar(ci: CanvasItem, rect: Rect2, percent: int, color: Color = COLOR_ACCENT,
+		enabled: bool = true) -> void:
+	var n := VOLUME_SEGMENTS
+	var gap := maxf(roundf(rect.size.y * 0.17), 2.0)
+	var seg := (rect.size.x - gap * (n - 1)) / n
+	var lit := clampi(roundi(percent / (100.0 / n)), 0, n)
+	for i in n:
+		var hf := lerpf(0.42, 1.0, float(i) / (n - 1))
+		var h := roundf(rect.size.y * hf)
+		var r := Rect2(rect.position.x + i * (seg + gap), rect.end.y - h, seg, h)
+		if i < lit:
+			var c := color.lerp(Color(1.0, 0.93, 0.75, color.a), 0.35 * float(i) / (n - 1)) if enabled else color
+			ci.draw_rect(r, c)
+		else:
+			var c := Color(COLOR_DIM, 0.16 if enabled else 0.1)
+			ci.draw_rect(r, c)
+			ci.draw_rect(r, Color(COLOR_DIM, 0.38 if enabled else 0.22), false, 1.0)
 
 
 ## Label/value row: label left-aligned at left_x, value right-aligned at right_x (same baseline).

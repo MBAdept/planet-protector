@@ -4,7 +4,7 @@
 This is the single source of truth for everyone working on this project.
 Engine: **Godot 4.7.2** (GDScript, `gl_compatibility` renderer). Art: **Blender 5.2 (bpy, Cycles CPU)**.
 Audio: offline synthesis with Python (numpy/scipy) + a small runtime sequencer in Godot.
-Deliverable: a single Linux x86_64 executable with embedded PCK (`build/PlanetProtector.x86_64`).
+Deliverables: single executables with embedded PCK for Linux x86_64 (`build/linux/PlanetProtector.x86_64`) and Windows x86_64 (`build/windows/PlanetProtector.exe`), see docs/WINDOWS.md.
 All in-game text is **English**.
 
 Tooling paths (this machine):
@@ -237,6 +237,13 @@ LEVEL game over → GAME OVER → NAME ENTRY (if qualifies) → HIGHSCORES → T
 PAUSE: Q (or controller Back) → TITLE (no highscore entry)
 ```
 - Title: logo, START, DIFFICULTY (cycle), MUSIC On/Off, SOUND EFFECTS On/Off, HIGHSCORES, QUIT. Options persist on disk.
+  [DESIGN – client request, feedback round 3] Two more rows directly under the switches: MUSIC VOLUME (under MUSIC) and
+  EFFECTS VOLUME (under SOUND EFFECTS), each a 10-segment bar plus the percentage, 0–100 % in 10 % steps (§14). Left/right
+  step ±10 % with the controlled menu repeat, clamped at 0 % / 100 %; MUSIC VOLUME is heard live in the title music,
+  EFFECTS VOLUME plays a short preview effect (`shot_laser`) at the new gain; confirm on a volume row only previews (no
+  wrap). A bar is dimmed while its ON/OFF switch is OFF. The ON/OFF rows and every other key/button keep their behaviour.
+  Layout of the 8 rows at 960 × 720: logo 620 px wide below the BEST line, tagline, menu panel (rows 41 px apart), the two
+  hint rows (`tests/test_volume.gd` checks that nothing overlaps).
 - Interlevel: "LEVEL n COMPLETE – <name>", score, level bonus, extra life (if awarded), total time, and the remaining battles
   until the next planet, e.g. "2 more battles until Uranus". After levels 3, 6, 9, 12, 16 show "<Planet> secured!" instead.
   For levels 17–19 show "<20−n> more battle(s) to defend Earth". No wrong planet counters after bonus level 13 (the bonus result
@@ -315,6 +322,15 @@ Keyboard: Left/Right arrows or A/D move; Space fires; Enter confirms; P or Escap
 (global); Escape on the title screen quits. Backspace deletes in name entry. [DESIGN] Escape in sub-menus = back; Space also
 confirms on title and ship select (mirrors controller A).
 
+[DESIGN – feedback round 3] Pause overlay with volumes: up/down (keys, D-pad, stick) selects MUSIC VOLUME / EFFECTS VOLUME,
+left/right steps it by 10 % (controlled repeat, persisted and applied at once; EFFECTS VOLUME plays the preview effect, the
+music row says "Music is paused" because the game music is silent in a pause by rule). P / Escape / Start still resume,
+Q / Back still quit to the title, A/B (fire) do nothing there. Release guards for directions only: a direction held when
+the pause opens (e.g. the ship's movement) steps nothing there until it was released and pressed again, and a movement
+direction still held when the pause closes does not move the ship until it is released. Fire is not latched: a fire button
+held through the pause (or pressed in it) fires at once after the resume (hold-to-fire, §4). P/Escape/Start/Q/Back
+act on a fresh press only, so a held one does nothing. No pause and no volume menu in a demo (§11.1).
+
 Controller (Godot/SDL positional mapping; PlayStation: Cross = A, Circle = B, Square = X, Triangle = Y, Options = Start, Share/Create = Back):
 - D-pad or left stick left/right moves (analog with sensible deadzone, 0.25).
 - A/B fire. X/Y confirm. A also confirms on the title screen and in ship select.
@@ -361,6 +377,12 @@ Controller (Godot/SDL positional mapping; PlayStation: Cross = A, Circle = B, Sq
 - Sound effects: per-ship shot sounds, enemy fire, enemy hit (small), enemy explosion, locked hit "clink", player explosion
   (louder, brighter, never clipping), extra life, level complete, materialize, menu move/confirm/back, bonus tick, game over.
 - Music and effects can be switched independently and switches act immediately (bus mute).
+- [DESIGN – client request, feedback round 3] Player volumes MUSIC VOLUME / EFFECTS VOLUME: 0–100 % in 10 % steps, default
+  100 % = the original mix, stored in `user://settings.cfg` (`[audio] music_volume / sfx_volume`; files without the keys
+  read as 100 %). `AudioManager.apply_settings()` sets the Music / SFX bus gain at once with amplitude = v² (40·log10 v dB:
+  90 % −1.8 dB, 50 % −12 dB, 10 % −40 dB; 0 % mutes); never above 0 dB, so the Master limiter guarantee is unchanged.
+  The ON/OFF switches mute on top regardless of the volume. Unaffected: the arrival silence (it fades/mutes the SFX bus from
+  the player's gain and re-applies the settings on exit), the title-music-only demo, pause/respawn silence of the game music.
 - All audio files are exported with the game.
 
 ## 15. Graphics [DESIGN]
