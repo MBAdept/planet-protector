@@ -646,8 +646,17 @@ func _destroy(e: Enemy) -> void:
 	ex.duration = LevelData.ENEMY_EXPLOSION_TIME
 	explosions.append(ex)
 	events.append({"type": "enemy_destroyed", "id": e.id, "x": e.x, "y": e.y, "scale": e.scale,
-		"points": _points, "is_child": e.is_child, "stage": e.stage, "explosion": ex.id})
+		"points": _points, "is_child": e.is_child, "stage": e.stage, "explosion": ex.id,
+		"group_cleared": not _group_alive(e.group_id)})
 	_release_slot(e.slot)
+
+
+## True while any figure of this group (an original or its children) is still alive.
+func _group_alive(group_id: int) -> bool:
+	for o in enemies:
+		if o.group_id == group_id:
+			return true
+	return false
 
 
 func _release_slot(slot_idx: int) -> void:

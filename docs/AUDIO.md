@@ -67,7 +67,8 @@ Chords two bars each: **Em | C | Am | B** (i–VI–iv–V, the major B gives th
 
 ## Bass rules (SPEC §14)
 
-`reset_bass(level)` at every level start → E1. `notify_enemy_destroyed()` on every FINAL destruction.
+`reset_bass(level)` at every level start → E1. `notify_enemy_destroyed()` once per destroyed ORIGINAL enemy
+(GameScreen calls it only when `enemy_destroyed.group_cleared` is true, i.e. for a split pair when its last child dies).
 `compute_bass_semitone(level, kills)`: levels 17, 18, 20 → `kills % 10`; otherwise `min(kills, 40)`.
 The counter runs regardless of music on/off/suspended.
 

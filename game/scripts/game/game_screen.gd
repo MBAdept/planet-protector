@@ -237,7 +237,10 @@ func _handle_events() -> void:
 				_fx.impulse("locked", Vector2(ev["x"], ev["y"]), float(ev.get("scale", 1.0)))
 			"enemy_destroyed":
 				_sfx("enemy_explode", 0.0, randf_range(0.93, 1.07))
-				AudioManager.notify_enemy_destroyed()
+				# Client decision: the bass rises once per ORIGINAL enemy, i.e. for split enemies only when
+				# the last child of the pair is gone.
+				if bool(ev.get("group_cleared", true)):
+					AudioManager.notify_enemy_destroyed()
 				var pts := int(ev["points"])
 				if pts > 0:
 					_fx.popup("+%d" % pts, Vector2(ev["x"], float(ev["y"]) - 22.0))

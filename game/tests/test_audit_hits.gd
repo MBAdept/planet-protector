@@ -99,12 +99,13 @@ func test_bass_rises_only_on_final_destruction() -> void:
 		gs.call("_handle_events")
 		check_eq(AudioManager.bass_semitone(), b0, "L%d no rise on non-final hit" % n)
 		if n == 8:
+			# Client decision (feedback round 1): one semitone per ORIGINAL, i.e. when the pair is gone.
 			w.apply_hit(w.enemies[0])
 			gs.call("_handle_events")
-			check_eq(AudioManager.bass_semitone(), b0 + 1, "L8 child destroyed")
+			check_eq(AudioManager.bass_semitone(), b0, "L8 first child destroyed: no rise yet")
 			w.apply_hit(w.enemies[0])
 			gs.call("_handle_events")
-			check_eq(AudioManager.bass_semitone(), b0 + 2, "L8 second child destroyed")
+			check_eq(AudioManager.bass_semitone(), b0 + 1, "L8 second child destroyed: pair gone, +1")
 		elif n == 14:
 			var v := w.add_enemy(0, 150.0)
 			w.apply_hit(a)   # locked (violet v alive)

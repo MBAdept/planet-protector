@@ -1371,3 +1371,24 @@ func test_rolling_window_counts_respawn_game_time() -> void:
 	w.apply_hit(b)
 	check(w.enemies.has(b), "0, 8, 10.0+ → the 0 s hit expired during play + respawn game time")
 	check_eq(b.hit_steps.size(), 2)
+
+
+## Client decision (feedback round 1): the bass rises once per ORIGINAL enemy. enemy_destroyed carries
+## group_cleared = true for single figures and only for the LAST child of a split pair.
+func test_group_cleared_flag_for_bass() -> void:
+	var w := _world(8, 0)
+	var e := w.add_enemy(1, 480.0)
+	w.apply_hit(e)   # split
+	check_eq(_events(w, "enemy_destroyed").size(), 0, "split destroys nothing")
+	check_eq(w.enemies.size(), 2)
+	w.apply_hit(w.enemies[0])
+	var d1 := _events(w, "enemy_destroyed")
+	check_eq(d1.size(), 1)
+	check_eq(bool(d1[0]["group_cleared"]), false, "first child: partner still alive")
+	w.events.clear()
+	w.apply_hit(w.enemies[0])
+	var d2 := _events(w, "enemy_destroyed")
+	check_eq(bool(d2[0]["group_cleared"]), true, "second child clears the pair")
+	var w1 := _world(1, 0)
+	w1.apply_hit(w1.add_enemy(2, 300.0))
+	check_eq(bool(_events(w1, "enemy_destroyed")[0]["group_cleared"]), true, "single figure clears its group")

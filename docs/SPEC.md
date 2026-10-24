@@ -282,8 +282,9 @@ Controller (Godot/SDL positional mapping; PlayStation: Cross = A, Circle = B, Sq
   Plays on title, ship select, highscores and name entry. Stops for gameplay.
 - Game music: runtime sequencer at 200 BPM (one 4/4 bar = 1.2 s): kick on every quarter, snare on beat 3, hats on 8ths,
   a bass hit on every quarter. The bass starts on E1 (41.203 Hz, with enough harmonics to be audible on small speakers) and rises
-  one semitone per FINAL destruction of a figure (per child for split enemies; not on split hits, colour changes or non-lethal
-  Earth hits). Reset to E1 at every level start. In levels 17, 18, 20 it drops back to E1 after every 10 destructions; elsewhere
+  one semitone per destroyed ORIGINAL enemy: for split enemies only when the LAST child of the pair is destroyed (client
+  decision, feedback round 1; GameWorld marks it with enemy_destroyed.group_cleared); never on split hits, colour changes or
+  non-lethal Earth hits. Reset to E1 at every level start. In levels 17, 18, 20 it drops back to E1 after every 10 destructions; elsewhere
   it is capped at +40 semitones. The bass progress continues internally even with music switched off.
   Silent during pause and respawn; on return the beat restarts at a bar start. No tempo change by difficulty.
 - Arrival sequences are completely silent. No game music in ship select, arrival, highscores, end screens.
