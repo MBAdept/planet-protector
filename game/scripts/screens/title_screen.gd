@@ -3,8 +3,11 @@ extends ScreenBase
 ## HIGHSCORES / QUIT. Up/down selects, left/right changes values, confirm activates.
 ## Keyboard: Enter/Space confirm, Escape quits. Controller: A/X/Y/Start confirm, Select/Back → highscores,
 ## B is ignored. Options persist via Settings and act immediately.
-## finished: "start" | "highscores" | "quit".
-## setup args: {"select": <item id>} (optional initial selection).
+## Attract mode (SPEC §11.1): after AttractDirector.IDLE_TIME (90) real seconds without any player input (key,
+## mouse button, joypad button, D-pad, stick beyond 0.5) the title hands over to the demo; any input restarts
+## the idle timer.
+## finished: "start" | "highscores" | "quit" | "attract".
+## setup args: {"select": <item id>} (optional initial selection), {"attract_after": <s>} (idle time, dev/tests).
 
 const GAME_TITLE := "PLANET PROTECTOR"
 const TAGLINE := "DEFEND THE SOLAR SYSTEM"
@@ -20,12 +23,16 @@ const MENU_W := 430.0
 var _sel := 0
 var _demons: Array[Dictionary] = []
 var _best: Dictionary = {}
+## Real seconds without player input (attract mode).
+var idle := 0.0
+var _attract_after := AttractDirector.IDLE_TIME
 
 
 func _enter() -> void:
 	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS   # logo.png is imported with mipmaps
 	AudioManager.play_title_music()
 	_sel = maxi(ITEMS.find(String(args.get("select", "start"))), 0)
+	_attract_after = float(args.get("attract_after", AttractDirector.IDLE_TIME))
 	_spawn_demons()
 	_refresh_best()
 
@@ -76,8 +83,16 @@ func _update_demons(delta: float) -> void:
 		e.queue_redraw()
 
 
+func _input(event: InputEvent) -> void:
+	if AttractDirector.is_player_input(event):
+		idle = 0.0
+
+
 func _tick(delta: float) -> void:
 	_update_demons(delta)
+	if _update_idle(delta):
+		finish("attract")
+		return
 	var dir := InputRouter.menu_direction()
 	if dir.y != 0:
 		_sel = posmod(_sel + dir.y, ITEMS.size())
@@ -92,6 +107,12 @@ func _tick(delta: float) -> void:
 	elif InputRouter.highscores_pressed():
 		sfx("menu_confirm")
 		finish("highscores")
+
+
+## Idle timer of the attract mode: input events reset it (_input), so does anything held. True once the demo is due.
+func _update_idle(delta: float) -> bool:
+	idle = 0.0 if AttractDirector.input_held() else idle + delta
+	return idle >= _attract_after
 
 
 ## ON/OFF options flip once per press: auto-repeat steps of a held direction are ignored for them

@@ -35,6 +35,8 @@ class Enemy:
 	var armed := true            ## may fire at all (child rules / lane permissions)
 	var fire_timer := INF        ## per-figure timer (levels ≥ 11)
 	var dir_timer := INF         ## random direction change timer (levels ≥ 10)
+	var turn_age := 0.0          ## game seconds since its last direction change (spawn / split counts as one)
+	var cover_time := 0.0        ## game seconds it has been covered by a lower figure in a row (levels ≥ 10)
 
 	func materialize() -> float:
 		return clampf(age / LevelData.MATERIALIZE_TIME, 0.0, 1.0)
@@ -458,7 +460,7 @@ func _spawn_original(slot_idx: int) -> Enemy:
 	e.slot = slot_idx
 	e.lane = sl.lane
 	e.x = _pick_spawn_x(sl.lane)
-	e.dir = -1.0 if rng.randf() < 0.5 else 1.0
+	e.dir = _pick_spawn_dir(sl.lane, e.x)
 	e.osc_phase = rng.randf() * TAU
 	e.flap_offset = rng.randf()
 	e.armed = _original_armed(e.lane)
@@ -472,28 +474,66 @@ func _spawn_original(slot_idx: int) -> Enemy:
 	return e
 
 
-## Random x within the limits, trying to keep SPAWN_MIN_DISTANCE to other figures on the lane.
+## Spawn x of a new original (SPEC §5): uniformly random among all x within the limits that keep
+## SPAWN_MIN_DISTANCE to every figure on its own lane AND a free column, i.e. SPAWN_COLUMN_CLEARANCE to every
+## figure on the other lanes (children included), so it does not appear hidden behind a lower one.
+## If the screen is too crowded for that, both distances are relaxed by the same factor (1.0, 0.9, … 0.0)
+## and the first factor that leaves room is used – the best compromise keeps as much of both as possible.
+## The free set is computed exactly (no sampling), so exactly one random number is used per spawn.
 func _pick_spawn_x(lane: int) -> float:
 	var lo := min_x(1.0)
 	var hi := max_x(1.0)
-	var best_x := rng.randf_range(lo, hi)
-	var best_d := _lane_gap(lane, best_x)
-	for i in 16:
-		if best_d >= LevelData.SPAWN_MIN_DISTANCE:
-			break
-		var cx := rng.randf_range(lo, hi)
-		var d := _lane_gap(lane, cx)
-		if d > best_d:
-			best_x = cx
-			best_d = d
-	return best_x
+	for k in LevelData.SPAWN_RELAX_STEPS + 1:
+		var f := 1.0 - float(k) / float(LevelData.SPAWN_RELAX_STEPS)
+		var free := _spawn_free_segments(lane, f, lo, hi)
+		var length := 0.0
+		for i in range(0, free.size(), 2):
+			length += free[i + 1] - free[i]
+		if length <= EPS:
+			continue
+		var r := rng.randf() * length
+		for i in range(0, free.size(), 2):
+			var seg := free[i + 1] - free[i]
+			if r <= seg:
+				return free[i] + r
+			r -= seg
+		return free[free.size() - 1]   # rounding guard
+	return rng.randf_range(lo, hi)   # unreachable: factor 0.0 blocks nothing
 
 
-func _lane_gap(lane: int, x: float) -> float:
-	var d := INF
+## The parts of [lo, hi] at least f·SPAWN_MIN_DISTANCE away from every figure on `lane` and at least
+## f·SPAWN_COLUMN_CLEARANCE away from every figure on the other lanes, as [a0, b0, a1, b1, …] (ascending).
+func _spawn_free_segments(lane: int, f: float, lo: float, hi: float) -> PackedFloat64Array:
+	var blocked: Array[PackedFloat64Array] = []
 	for e in enemies:
-		if e.lane == lane:
-			d = minf(d, absf(e.x - x))
+		var r := f * (LevelData.SPAWN_MIN_DISTANCE if e.lane == lane else LevelData.SPAWN_COLUMN_CLEARANCE)
+		if r > 0.0:
+			blocked.append(PackedFloat64Array([e.x - r, e.x + r]))
+	blocked.sort_custom(func(a: PackedFloat64Array, b: PackedFloat64Array) -> bool: return a[0] < b[0])
+	var out := PackedFloat64Array()
+	var cur := lo
+	for iv in blocked:
+		if iv[0] > cur and cur < hi:
+			out.append(cur)
+			out.append(minf(iv[0], hi))
+		cur = maxf(cur, iv[1])
+	if cur < hi:
+		out.append(cur)
+		out.append(hi)
+	return out
+
+
+## Start direction of a new original (SPEC §5): if a figure on another lane (children included) is within
+## SPAWN_DIR_RANGE, opposite to the CURRENT direction of the nearest such figure, so the two separate instead
+## of flying on as a stack; otherwise random. Always uses one random number.
+func _pick_spawn_dir(lane: int, x: float) -> float:
+	var d := -1.0 if rng.randf() < 0.5 else 1.0
+	var nearest := INF
+	for e in enemies:
+		var dx := absf(e.x - x)
+		if e.lane != lane and dx <= LevelData.SPAWN_DIR_RANGE and dx < nearest:
+			nearest = dx
+			d = -e.dir
 	return d
 
 
@@ -551,21 +591,63 @@ func _init_figure_timers(e: Enemy) -> void:
 func _move_enemies(dt: float) -> void:
 	for e in enemies:
 		e.age += dt
+		e.turn_age += dt
 		e.x += e.dir * enemy_speed * dt
 		var lo := min_x(e.scale)
 		var hi := max_x(e.scale)
 		if e.x <= lo:
 			e.x = lo
-			e.dir = 1.0
+			_set_dir(e, 1.0)
 		elif e.x >= hi:
 			e.x = hi
-			e.dir = -1.0
+			_set_dir(e, -1.0)
 		if e.dir_timer != INF:
 			e.dir_timer -= dt
 			if e.dir_timer <= EPS:
-				e.dir = -e.dir
+				_set_dir(e, -e.dir)
 				e.dir_timer = rng.randf_range(LevelData.DIR_CHANGE_MIN, LevelData.DIR_CHANGE_MAX)
 		e.y = _lane_y(e)
+	if level >= LevelData.DIR_CHANGE_FROM_LEVEL:
+		_break_stacks(dt)
+
+
+func _set_dir(e: Enemy, d: float) -> void:
+	if e.dir != d:
+		e.dir = d
+		e.turn_age = 0.0
+
+
+## Stack breaking (SPEC §5). All figures of a level fly at the same speed, so a figure flying right above a
+## lower one stays hidden behind it until one of them turns – and a non-piercing shot always hits the LOWEST
+## overlapping figure (in levels 14–16 often a locked one). A figure counts as covered while a figure on a
+## LOWER lane is within |dx| < STACK_OVERLAP_DX and moves the same way. After STACK_COVER_TIME covered game
+## seconds in a row the upper figure reverses early – but never sooner than DIR_CHANGE_MIN after its own last
+## direction change (limit turn, random change, earlier break), and its random timer then restarts with
+## rand(1.2, 3.2): a break only brings the next random change forward, within the 1.2–3.2 s of the rules.
+## Only from level 10 on, where the rules allow additional direction changes; it runs with the movement,
+## i.e. in game time and not during RESPAWN.
+func _break_stacks(dt: float) -> void:
+	var covered: Array[bool] = []
+	for e in enemies:
+		covered.append(is_covered(e))
+	for i in enemies.size():
+		var e := enemies[i]
+		if not covered[i]:
+			e.cover_time = 0.0
+			continue
+		e.cover_time += dt
+		if e.cover_time >= LevelData.STACK_COVER_TIME - EPS and e.turn_age >= LevelData.DIR_CHANGE_MIN - EPS:
+			_set_dir(e, -e.dir)
+			e.cover_time = 0.0
+			e.dir_timer = rng.randf_range(LevelData.DIR_CHANGE_MIN, LevelData.DIR_CHANGE_MAX)
+
+
+## True while a figure on a lower lane overlaps `e` horizontally (|dx| < STACK_OVERLAP_DX) and moves the same way.
+func is_covered(e: Enemy) -> bool:
+	for o in enemies:
+		if o.lane > e.lane and o.dir == e.dir and absf(o.x - e.x) < LevelData.STACK_OVERLAP_DX:
+			return true
+	return false
 
 
 func _update_refills(dt: float) -> void:

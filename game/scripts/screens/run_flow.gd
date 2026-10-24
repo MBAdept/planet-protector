@@ -4,7 +4,7 @@ extends RefCounted
 ## `Main` asks "where do we go after <screen> finished with <result>?" and gets a step back:
 ##   {"screen": <name>, "level": <int>}
 ## Screen names: title, ship_select, level, interlevel, arrival, bonus_result, mars_rules, victory,
-## game_over, name_entry, highscores, quit.
+## game_over, name_entry, highscores, attract, quit.
 ##
 ##   TITLE ──Start──▶ SHIP SELECT ──confirm──▶ LEVEL 1
 ##   LEVEL n completed:
@@ -14,6 +14,7 @@ extends RefCounted
 ##      n = 13 → BONUS RESULT → MARS RULES → LEVEL 14
 ##   LEVEL game over → GAME OVER → NAME ENTRY (if qualifies) → HIGHSCORES → TITLE
 ##   PAUSE quit → TITLE
+##   TITLE idle 90 s ──▶ ATTRACT (demo) ──end / any input──▶ TITLE
 
 const SCREENS: Array[String] = ["title", "ship_select", "interlevel", "arrival", "mars_rules", "bonus_result",
 	"victory", "game_over", "name_entry", "highscores"]
@@ -35,7 +36,11 @@ static func next(from: String, result: String, level: int, qualifies: bool = fal
 					return step("highscores")
 				"quit":
 					return step("quit")
+				"attract":
+					return step("attract")
 			return step("title")
+		"attract":
+			return step("title")   # the demo is over or the player pressed something
 		"ship_select":
 			if result == "confirm":
 				return step("level", LevelData.FIRST_LEVEL)

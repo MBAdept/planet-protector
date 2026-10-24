@@ -3,6 +3,9 @@ extends Node2D
 ## Owns the pure GameWorld simulation, feeds it with input (or the autoplay bot), renders it, turns its
 ## events into audio + effects, syncs score/lives/play time into Run and reports the result.
 ## Protocol: setup({"level": n}) before entering the tree; emits finished("completed"|"game_over"|"quit", {}).
+## Attract mode (demo, SPEC §11.1): setup({"attract": {"seed": s, "level": n (0 = random)}}). An AttractDirector
+## plays the level with the autopilot; the screen never touches Run and makes no sound (the title music keeps
+## playing); any player input ends it. Emits finished("end") when the demo is over, finished("exit") on input.
 
 signal finished(result: String, data: Dictionary)
 
@@ -12,6 +15,7 @@ const ProjectilesView := preload("res://scripts/game/projectiles_view.gd")
 const FxLayer := preload("res://scripts/game/fx_layer.gd")
 const Hud := preload("res://scripts/game/hud.gd")
 const Autopilot := preload("res://scripts/game/autopilot.gd")
+const AudioManagerScript := preload("res://scripts/autoload/audio_manager.gd")
 
 ## Real seconds. Frames up to this length are simulated and counted IN FULL (the world sub-steps them), so
 ## hitches and slow machines keep real-time speed and exact real play time (SPEC §1, §9). Only a longer
@@ -26,6 +30,11 @@ const GAME_OVER_DELAY := 0.6
 var level := 1
 var world: GameWorld
 var paused := false
+## Attract mode (demo): the director owns the choreography, see AttractDirector.
+var attract := false
+var director: AttractDirector
+## Sound output (tests may put a spy here). A demo never reaches it: no effects, no game music, no bass.
+var audio: AudioManagerScript = AudioManager
 
 var _base_score := 0
 var _base_time := 0.0
@@ -40,6 +49,7 @@ var _last_axis := 0.0
 var _anim := 0.0
 var _sfx_this_frame := {}
 var _enemy_nodes := {}             # enemy id → EnemyArt
+var _input_seen := false           # attract: a player input event arrived since the last frame
 
 var _stars: Starfield
 var _root: Node2D
@@ -52,10 +62,21 @@ var _hud: Node2D
 
 
 func setup(args: Dictionary) -> void:
+	if args.has("attract"):
+		var a: Dictionary = args["attract"]
+		attract = true
+		director = AttractDirector.new(int(a.get("seed", 0)), int(a.get("level", 0)))
+		level = director.level
+		return
 	level = clampi(int(args.get("level", Run.level)), LevelData.FIRST_LEVEL, LevelData.LAST_LEVEL)
 
 
 func _ready() -> void:
+	if attract:
+		# A demo has its own world (NORMAL, one life) and leaves Run and the audio alone.
+		world = director.make_world()
+		_build()
+		return
 	world = GameWorld.new(level, Run.difficulty, Run.ship_id, Run.lives, randi())
 	world.invincible = Run.dev("invincible")
 	_base_score = Run.score
@@ -64,8 +85,8 @@ func _ready() -> void:
 	_build()
 	# Title music (ship select) stops for gameplay (SPEC §14) – the intro banner is silent; the game music
 	# starts with the combat.
-	AudioManager.stop_music()
-	AudioManager.reset_bass(level)
+	audio.stop_music()
+	audio.reset_bass(level)
 
 
 func _build() -> void:
@@ -92,7 +113,7 @@ func _build() -> void:
 	_fx = FxLayer.new()
 	_fx.world = world
 	_fx.level = level
-	_fx.ship_accent = ShipData.ship(Run.ship_id)["accent"]
+	_fx.ship_accent = ShipData.ship(world.ship_id)["accent"]
 	_root.add_child(_fx)
 	_shots = ProjectilesView.new()
 	_shots.mode = ProjectilesView.Mode.SHOTS
@@ -117,13 +138,22 @@ func _build() -> void:
 	_hud = Hud.new()
 	_hud.world = world
 	_hud.level = level
+	_hud.attract = attract
 	add_child(_hud)
 
 
 # --- Frame ---------------------------------------------------------------------------------------
+func _input(event: InputEvent) -> void:
+	if attract and AttractDirector.is_player_input(event):
+		_input_seen = true
+
+
 func _process(delta: float) -> void:
 	_sfx_this_frame.clear()
 	if _done:
+		return
+	if attract:
+		_process_attract(delta)
 		return
 	if paused:
 		if InputRouter.pause_pressed():
@@ -156,14 +186,33 @@ func _process(delta: float) -> void:
 	_check_end(dt)
 
 
+## Attract mode: the director plays the level; any player input (key, button, D-pad, stick – P/Escape/Start
+## too, there is no pause) ends the demo at once. Main's require_release() on the screen change keeps that press
+## from acting on the title.
+func _process_attract(delta: float) -> void:
+	if _input_seen or AttractDirector.input_held():
+		_finish("exit")
+		return
+	var dt := minf(delta, MAX_FRAME_DT)
+	var prev_x := world.player_x
+	director.play(world, dt)
+	var game_dt := dt * world.speed_factor if world.state != GameWorld.State.INTRO else 0.0
+	_last_axis = clampf((world.player_x - prev_x) / maxf(LevelData.PLAYER_SPEED * game_dt, 1e-6), -1.0, 1.0) if game_dt > 0.0 else 0.0
+	_anim += dt
+	_handle_events()
+	_update_views(dt, game_dt)
+	if director.is_over():
+		_finish("end")
+
+
 func _set_paused(p: bool) -> void:
 	paused = p
 	_hud.paused = p
 	_stars.velocity = Vector2.ZERO if p else Vector2(0, 6)
 	if p:
-		AudioManager.set_game_music_suspended(true)
+		audio.set_game_music_suspended(true)
 	elif world.state == GameWorld.State.PLAYING:
-		AudioManager.set_game_music_suspended(false)
+		audio.set_game_music_suspended(false)
 	_hud.queue_redraw()
 
 
@@ -188,28 +237,36 @@ func _finish(result: String) -> void:
 	if _done:
 		return
 	_done = true
-	_sync_run()
-	if result == "completed":
-		Run.last_level_result = world.result.duplicate()
-		if world.is_bonus():
-			Run.last_bonus_result = world.bonus_result.duplicate()
-	AudioManager.stop_music()
+	if not attract:
+		_sync_run()
+		if result == "completed":
+			Run.last_level_result = world.result.duplicate()
+			if world.is_bonus():
+				Run.last_bonus_result = world.bonus_result.duplicate()
+		audio.stop_music()
 	finished.emit(result, {})
 
 
 # --- Events → audio + FX -------------------------------------------------------------------------
+## True if the screen may make sound: a demo is silent (the title music keeps playing, SPEC §11.1).
+func _sound() -> bool:
+	return not attract
+
+
 func _sfx(sfx_name: String, volume_db: float = 0.0, pitch: float = 1.0) -> void:
-	if _sfx_this_frame.has(sfx_name):
+	if not _sound() or _sfx_this_frame.has(sfx_name):
 		return
 	_sfx_this_frame[sfx_name] = true
-	AudioManager.play_sfx(sfx_name, volume_db, pitch)
+	audio.play_sfx(sfx_name, volume_db, pitch)
 
 
 func _handle_events() -> void:
+	var sound := _sound()
 	for ev in world.events:
 		match String(ev["type"]):
 			"combat_start":
-				AudioManager.play_game_music()
+				if sound:
+					audio.play_game_music()
 			"shot_fired":
 				_sfx(String(ShipData.ship(int(ev["ship_id"]))["sfx"]))
 				var col := _muzzle_color()
@@ -239,22 +296,23 @@ func _handle_events() -> void:
 				_sfx("enemy_explode", 0.0, randf_range(0.93, 1.07))
 				# Client decision: the bass rises once per ORIGINAL enemy, i.e. for split enemies only when
 				# the last child of the pair is gone.
-				if bool(ev.get("group_cleared", true)):
-					AudioManager.notify_enemy_destroyed()
+				if sound and bool(ev.get("group_cleared", true)):
+					audio.notify_enemy_destroyed()
 				var pts := int(ev["points"])
 				if pts > 0:
 					_fx.popup("+%d" % pts, Vector2(ev["x"], float(ev["y"]) - 22.0))
 				_kick(2.5 if not bool(ev.get("is_child", false)) else 1.5, 0.18)
 			"player_hit":
 				_sfx("player_explode")
-				AudioManager.set_game_music_suspended(true)
+				if sound:
+					audio.set_game_music_suspended(true)
 				_respawn_time = 0.0
 				_kick(9.0, 0.55)
 			"player_respawn":
 				_respawn_time = -1.0
 				_since_respawn = 0.0
-				if not paused and world.state == GameWorld.State.PLAYING:
-					AudioManager.set_game_music_suspended(false)
+				if sound and not paused and world.state == GameWorld.State.PLAYING:
+					audio.set_game_music_suspended(false)
 				_fx.impulse("respawn", Vector2(ev["x"], LevelData.PLAYER_Y), 1.0, ShipData.ship(world.ship_id)["accent"])
 			"bullet_landed":
 				_bullets.splash(float(ev["x"]))
@@ -266,7 +324,8 @@ func _handle_events() -> void:
 			"clearing":
 				_clear_time = 0.0
 				_sfx("level_complete")
-				AudioManager.stop_music()
+				if sound:
+					audio.stop_music()
 			"level_goal_met", "level_complete", "game_over":
 				pass
 	world.events.clear()

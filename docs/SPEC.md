@@ -89,12 +89,28 @@ Everything marked **[DESIGN]** is our own design decision (may be refined, but s
 - [RULE] Small vertical oscillation of about ±22 px. [DESIGN] `y = lane_y + 22*sin(phase + 2π*0.55*t)`, random phase per original; children inherit the parent's phase.
 - [RULE] Horizontal limits ≈ x = 50 … 910. [DESIGN] Like all other reference coordinates these are CENTER positions: center x ∈ [50, 910] for all figures, children included (the widest cosmetic variant, 99 px, still stays on screen). Enemies turn around at the limits; spawn x and child placement use the same range.
 - [RULE] From level 10 on: additionally independent random direction changes after a random 1.2–3.2 game-seconds (per figure, children included).
+  [DESIGN] Stack breaking (only from level 10 on – below level 10 there are no direction changes except at the limits):
+  a figure counts as *covered* while a figure on a LOWER lane (larger lane index, children included) is within |dx| < 60 px
+  and moves in the SAME direction – without this, equally fast figures stay stacked until one turns, and a non-piercing
+  shot always hits the lowest overlapping figure (in levels 14–16 often a locked one). After 0.5 game-seconds covered in a
+  row the upper figure reverses early, but never sooner than 1.2 game-seconds after its own last direction change (limit
+  turn, random change or earlier stack break; spawn / split counts as one); its random timer then restarts with
+  rand(1.2, 3.2). A stack break thus only brings the next random change forward – never to less than 1.2 s after the
+  previous change, and the restarted timer keeps the next interval ≤ 3.2 s. Runs with the enemy movement: game time,
+  nothing counts during RESPAWN. (`LevelData.STACK_OVERLAP_DX`, `STACK_COVER_TIME`.)
 - Enemy base speed: **62 px/s × level tempo** (× speed_factor through game time).
 - [RULE] Enemy nominal width 90 px. Visual planet variants may be wider (cosmetic width factors per planet: Neptune 1.00, Uranus 1.02, Saturn 1.04, Jupiter 1.06, Mars 1.08, Earth 1.10) WITHOUT enlarging the hit area.
 - [RULE] Hit tests: own projectile vs. enemy: `|dx| < 49·s` and `|dy| < 21·s` (s = enemy scale: 1, 0.40 or 0.45). Enemy bullet vs. player: `|dx| < 21` and `|dy| < 15` (player center (x, 659)).
 - [RULE] Slots: the level table defines the number of ORIGINAL enemy slots per lane (top/middle/bottom). At combat start every slot is filled (as long as the total is not reached). A free slot is refilled after ≈ **2.0 game-seconds** until the level's total number of ORIGINAL enemies has been spawned.
 - [RULE] For split enemies a slot is only free after BOTH halves are destroyed. Children never count towards the total or the refill.
-- [DESIGN] Spawn: random x within limits (try to keep ≥ 160 px distance to other enemies on the same lane), random direction, short 0.45 s materialize effect (already hittable, already "visible").
+- [DESIGN] Spawn (fair spawning, all levels): x uniformly random among all x within the limits that keep ≥ 160 px to every
+  figure on the same lane AND a free column, i.e. ≥ 110 px to every figure on the OTHER lanes (children included), so a new
+  enemy does not appear hidden behind a lower one. If the screen is too crowded for that, both distances are relaxed by the
+  same factor (1.0, 0.9, … 0.0) and the first factor that leaves room is used (best compromise; the free set is computed
+  exactly, one random number per spawn). Start direction: if a figure on another lane is within 250 px horizontally, the
+  opposite of the CURRENT direction of the nearest such figure (the two separate instead of flying on as a stack);
+  otherwise random. Short 0.45 s materialize effect (already hittable, already "visible").
+  (`LevelData.SPAWN_MIN_DISTANCE`, `SPAWN_COLUMN_CLEARANCE`, `SPAWN_RELAX_STEPS`, `SPAWN_DIR_RANGE`.)
 - Level goal: all ORIGINAL enemies spawned AND no enemy (incl. children) alive.
 
 ## 6. Level table [RULE]
@@ -238,6 +254,60 @@ PAUSE: Q (or controller Back) → TITLE (no highscore entry)
   `You are a real champion on the trigger. You moved smoothly through enemy lines, you destroyed them all! Everlasting love to You, oh great PLANET PROTECTOR!`
   Enter leads to the highscore entry.
 - Ship select: six ships with animated previews that use the SAME projectile graphics as the game (guided shots follow the preview ship).
+
+### 11.1 Attract mode (demo) [DESIGN – client request, feedback round 2]
+
+```
+TITLE ──90 s without input──▶ ATTRACT (demo run) ──over / any input──▶ TITLE
+```
+- Idle timer: 90 REAL seconds without player input while the TITLE screen is shown start the demo (title emits
+  `finished("attract")`). Player input = a key (also its auto-repeat), a mouse button, a joypad button (D-pad included) or a
+  stick deflected beyond 0.5 (mouse motion and triggers do not count); every input event – and anything held – resets the
+  timer. Only the title counts; a new title instance starts at 0 again.
+- The demo is the normal GameScreen in attract mode (`setup({"attract": {"seed", "level"}})`), choreographed by the pure
+  class `AttractDirector` (`scripts/game/attract_director.gd`): random level 1–20 EXCEPT 13 (no enemy fire there, the ship
+  could not be hit), random ship, difficulty NORMAL (speed factor 1.0) and ONE life regardless of the settings. It never
+  touches the run: no writes to `Run` (score, lives, level, play time, results; `Run.active` stays false), no highscores, no
+  `Settings` changes – the HUD shows the demo world's own score, lives, NORMAL and time.
+- Audio: the title music keeps playing seamlessly (never stopped or restarted, no game music); no sound effects at all and no
+  bass changes (every sound of the GameScreen goes through one output that a demo never calls).
+- Look: the normal level rendering incl. the intro banner, plus an unobtrusive overlay that covers no gameplay: "DEMO"
+  (Orbitron, letter-spaced, accent colour) in the free band between the top bar and the top lane, and a gently blinking
+  "PRESS ANY BUTTON" (Exo 2) on a dark pill in the ground strip.
+- Choreography (all times real seconds since the demo screen started, intro banner included):
+  - D = rand(15, 40) is the total length (screen start → back to the title). t_die = D − 1.9;
+    vulnerable window [max(13.1, t_die − 3), t_die].
+  - Before the window the ship is invincible; the autopilot (`Autopilot.demo`) aims (in levels 14–16 at figures of the
+    lowest colour stage, whose hits are not locked) and fires until it has landed N = rand(3…6) hits on enemies – every
+    hit that affects an enemy counts: split, destruction, colour-stage change, non-lethal Earth hit (locked hits do not).
+    It presses the trigger only for a NEW salvo (none in flight) that is predicted to land such a hit (unguided: the
+    salvo's flight against the figures' known paths, pending random turn included; guided: the target within steering
+    reach). That press lasts exactly one world sub-step that starts without a shot in flight, so no shot can hit
+    anything before the salvo leaves: no salvo ever leaves after the N-th hit, not even in the same sub-step.
+    Afterwards it keeps dodging without firing (the salvo already in flight may still touch a figure or two).
+    Simulated (900 demos): at least 3 hits before the ship is hit in all of them, the full N in all but 2.
+  - Dodging: the ship only moves within its escape set – the positions from which it can still avoid every fireball
+    in the air (computed backwards over 4.8 s, longer than any fireball needs to reach the ship). While the ship is
+    invincible the director withdraws, in the slice it was fired, any enemy salvo that would leave the ship no escape:
+    its fireballs and its event (muzzle flash) are removed before anything is drawn, as if that figure had not fired
+    (≈ 0.02 salvos per demo on average, ≈ 0.3 on level 20). So no fireball passes through the invincible ship.
+  - In the window it stops dodging and steers under the nearest falling enemy fireball (the first to arrive among those it
+    can still get under). If it is still alive 0.1 s before t_die, a fireball appears right above the ship (`add_bullet`)
+    and the ship holds still; the fireball enters the hit box right after t_die, so the ship is hit in the first
+    sub-step after t_die (also when the window is the single instant 13.1 s; a fireball on the ship 2 sub-steps after
+    t_die is the failsafe).
+  - With its one life the normal player explosion plays (1.3 s); 0.6 s later the demo ends → TITLE. End = min(hit + 1.9, D).
+    The hit always lies in [13.1, t_die + 1 sub-step], so the demo lasts 15 ≤ total ≤ D ≤ 40 s (the director cuts its
+    update slices exactly at these marks). It can never complete a level: the smallest level needs 10 kills, the demo
+    fires its last salvo with at most N − 1 hits landed, so only that salvo's few hits come on top.
+- Any player input during the demo (as above; P / Escape / Start included – there is no pause) ends it at once → TITLE. No
+  game-over screen, no name entry. The press does not act on the title: `Main` calls `InputRouter.require_release()` on the
+  screen change, so the held key/button/direction is latched until released (Enter does not start, Escape does not quit).
+- Back on the title: the title music is still running, the menu stands on START GAME and the idle timer restarts (another
+  demo after 90 s).
+- Dev/test: `--attract-after=<s>` (shorter idle time), `--screen=attract` (start a demo directly), `--attract-level=N`
+  (1–20 except 13) and `--attract-seed=S` (deterministic choice of level/ship/hits/D and world seed; with `--fixed-fps 60`
+  the whole demo is reproducible). Tests: `tests/test_attract.gd`, `tests/test_attract_review.gd`.
 
 ## 12. Controls [RULE]
 

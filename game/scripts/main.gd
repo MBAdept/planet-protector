@@ -7,6 +7,9 @@ extends Node
 ##   --level=N --ship=K --difficulty=D       start a run directly at level N (skips menus)
 ##   --dev [--invincible] [--autoplay]       dev flags for GameScreen (Run.dev_flags)
 ##   --screen=<name> [--arrival=N] [--name=ABC]  open one screen with fake run data (see RunFlow.SCREENS)
+##   --screen=attract                        start a demo run (attract mode) directly
+##   --attract-after=<s>                     idle time on the title before the demo starts (default 90)
+##   --attract-level=N --attract-seed=S      fixed demo level (1–20 except 13) / random seed (deterministic captures)
 ##   --screenshot=<abs path.png> [--screenshot-delay=<s>]   save a viewport PNG, then quit
 ##   --quit-after=<s>                        quit after s seconds
 
@@ -76,7 +79,11 @@ func _go(st: Dictionary, extra: Dictionary = {}) -> void:
 			_start_level(_level)
 		"title":
 			Run.active = false
+			if _args.has("attract-after"):
+				extra = _merge({"attract_after": RunFlow.arg_float(_args, "attract-after", AttractDirector.IDLE_TIME)}, extra)
 			_open("title", extra)
+		"attract":
+			_start_attract()
 		"ship_select":
 			_open("ship_select", {"ship": Run.ship_id})
 		"interlevel", "arrival", "bonus_result", "mars_rules":
@@ -120,6 +127,15 @@ func _start_level(n: int) -> void:
 	gs.setup({"level": n})
 	gs.finished.connect(_on_screen_finished.bind("level", gs))
 	_show(gs, "level")
+
+
+## Attract mode (SPEC §11.1): a demo run of the GameScreen. It never touches Run – Run.active stays false.
+func _start_attract() -> void:
+	var gs: Node = GameScreenScript.new()
+	gs.setup({"attract": {"seed": RunFlow.arg_int(_args, "attract-seed", randi() & 0x7fffffff, 0, 0x7fffffff),
+		"level": RunFlow.arg_int(_args, "attract-level", 0, 0, LevelData.LAST_LEVEL)}})
+	gs.finished.connect(_on_screen_finished.bind("attract", gs))
+	_show(gs, "attract")
 
 
 func _show(screen: Node, screen_name: String) -> void:
@@ -179,8 +195,12 @@ func _arg_ship() -> int:
 
 ## Opens a single screen with plausible fake run data (for screenshots / visual checks).
 func _open_dev_screen(screen_name: String) -> void:
+	if screen_name == "attract":
+		AudioManager.play_title_music()   # a demo runs on the title music (normally it is already playing)
+		_go(RunFlow.step("attract"))
+		return
 	if not SCREEN_SCRIPTS.has(screen_name):
-		push_warning("Main: unknown --screen=%s, valid: %s" % [screen_name, ", ".join(RunFlow.SCREENS)])
+		push_warning("Main: unknown --screen=%s, valid: %s, attract" % [screen_name, ", ".join(RunFlow.SCREENS)])
 		_go(RunFlow.step("title"))
 		return
 	var diff := _arg_difficulty()

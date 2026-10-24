@@ -41,6 +41,7 @@ Einstellungen und Highscores werden in `~/.local/share/planet_protector/` gespei
 ## Spielablauf
 
 - **Titel**: Schwierigkeit (Beginner, Normal, Hard, Expert), Musik und Soundeffekte an/aus, Highscores.
+  Nach 90 Sekunden ohne Eingabe startet eine kurze Demo (Attract-Modus); jede Taste führt zurück zum Titel.
 - **Schiffsauswahl**: sechs Schiffe mit unterschiedlichen Waffen (schnelle Laser, mitgeführte Raketen, Doppelschüsse,
   durchschlagende Schüsse). Animierte Vorschau zeigt jede Waffe in Aktion.
 - **20 Level** auf sechs Planeten. Sonderregeln:

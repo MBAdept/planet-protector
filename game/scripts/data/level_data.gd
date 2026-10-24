@@ -24,6 +24,17 @@ const ENEMY_OSC_HZ := 0.55
 const FLAP_HZ := 2.5
 const MATERIALIZE_TIME := 0.45
 const SPAWN_MIN_DISTANCE := 160.0
+## Fair spawning (SPEC §5): a new original keeps its column free of the figures on the OTHER lanes
+## (|dx| ≥ this, children included); crowded screens relax both spawn distances by the same factor.
+const SPAWN_COLUMN_CLEARANCE := 110.0
+const SPAWN_RELAX_STEPS := 10      # relaxation factors 1.0, 0.9, … 0.0
+## Nearest other-lane figure within this |dx| → a new original starts opposite to that figure's direction.
+const SPAWN_DIR_RANGE := 250.0
+## Stack breaking (SPEC §5, levels ≥ DIR_CHANGE_FROM_LEVEL): a figure counts as covered while a figure on a
+## LOWER lane within |dx| < STACK_OVERLAP_DX moves the same way; covered for STACK_COVER_TIME game seconds
+## → it reverses early (never sooner than DIR_CHANGE_MIN after its own last direction change).
+const STACK_OVERLAP_DX := 60.0
+const STACK_COVER_TIME := 0.5
 const CHILD_SPAWN_OFFSET := 24.0
 
 const HIT_DX := 49.0               # own projectile vs enemy (scaled by enemy scale)

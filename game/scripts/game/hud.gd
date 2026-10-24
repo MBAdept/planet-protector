@@ -1,7 +1,8 @@
 extends Node2D
 ## Game HUD (docs/SPEC.md §1, §10, §15): slim top bar (≤ 44 px, never covers the enemy lanes) with SCORE,
 ## LIVES, LEVEL + name, DIFFICULTY and TIME (MM:SS.t); bonus counters in the ground strip; level intro
-## banner, level-clear banner, respawn hint and the pause overlay.
+## banner, level-clear banner, respawn hint and the pause overlay. Attract mode (demo, SPEC §11.1): the values
+## come from the demo world (a demo never writes Run), plus the DEMO / PRESS ANY BUTTON overlay.
 
 const FxTex := preload("res://scripts/game/fx_tex.gd")
 
@@ -9,6 +10,8 @@ const BAR_H := 40.0
 const C_LABEL := Color(0.58, 0.66, 0.82, 0.9)
 const C_VALUE := Color(0.93, 0.96, 1.0)
 const C_ACCENT := Color(1.0, 0.68, 0.25)
+const ATTRACT_DEMO_Y := 80.0       ## demo label: between the top bar and the top lane (enemies reach up to y ≈ 125)
+const ATTRACT_BLINK_HZ := 0.8
 
 var world: GameWorld
 var level := 1
@@ -16,6 +19,7 @@ var paused := false
 var anim := 0.0             ## real seconds (banner animation)
 var clear_time := -1.0      ## real seconds since the level goal was reached (−1 = not yet)
 var respawn_time := -1.0
+var attract := false
 
 var _f_label: Font
 var _f_value: Font
@@ -59,6 +63,8 @@ func _draw() -> void:
 	_draw_banners()
 	if paused:
 		_draw_pause()
+	if attract:
+		_draw_attract()
 
 
 # --- Top bar -------------------------------------------------------------------------------------
@@ -70,10 +76,10 @@ func _draw_top_bar() -> void:
 	var vy := 35.0
 	# SCORE
 	_label(Vector2(18, ly), "SCORE")
-	_value(Vector2(18, vy), "%07d" % maxi(Run.score, 0), 19, C_VALUE)
+	_value(Vector2(18, vy), "%07d" % maxi(_score(), 0), 19, C_VALUE)
 	# LIVES
 	_label(Vector2(160, ly), "LIVES")
-	_draw_lives(Vector2(160, 21), Run.lives)
+	_draw_lives(Vector2(160, 21), _lives())
 	# LEVEL + name (centre)
 	var lvl_name := String(LevelData.level(level)["name"]).to_upper()
 	_label(Vector2(480, ly), "LEVEL %d" % level, HORIZONTAL_ALIGNMENT_CENTER, C_ACCENT)
@@ -83,14 +89,39 @@ func _draw_top_bar() -> void:
 	_value(Vector2(480, vy), lvl_name, size, C_VALUE, HORIZONTAL_ALIGNMENT_CENTER)
 	# DIFFICULTY
 	_label(Vector2(700, ly), "DIFFICULTY")
-	_value(Vector2(700, vy), Run.difficulty_name(), 14, _difficulty_color())
+	_value(Vector2(700, vy), _difficulty_name(), 14, _difficulty_color())
 	# TIME
 	_label(Vector2(942, ly), "TIME", HORIZONTAL_ALIGNMENT_RIGHT)
-	_value(Vector2(942, vy), Fmt.time(Run.active_time), 19, C_VALUE, HORIZONTAL_ALIGNMENT_RIGHT)
+	_value(Vector2(942, vy), Fmt.time(_play_time()), 19, C_VALUE, HORIZONTAL_ALIGNMENT_RIGHT)
+
+
+## Shown values: the run's (Run) – or, in a demo, the demo world's own.
+func _score() -> int:
+	return world.score_delta if attract else Run.score
+
+
+func _lives() -> int:
+	return world.lives if attract else Run.lives
+
+
+func _play_time() -> float:
+	return world.active_time if attract else Run.active_time
+
+
+func _difficulty() -> int:
+	return world.difficulty if attract else Run.difficulty
+
+
+func _difficulty_name() -> String:
+	return String(ShipData.difficulty(_difficulty())["name"])
+
+
+func _ship_id() -> int:
+	return world.ship_id if attract else Run.ship_id
 
 
 func _difficulty_color() -> Color:
-	match Run.difficulty:
+	match _difficulty():
 		0:
 			return Color(0.55, 0.95, 0.6)
 		1:
@@ -102,8 +133,8 @@ func _difficulty_color() -> Color:
 
 func _draw_lives(pos: Vector2, n: int) -> void:
 	if _icon == null:
-		_icon = Assets.ship_texture(Run.ship_id)
-		_accent = ShipData.ship(Run.ship_id)["accent"]
+		_icon = Assets.ship_texture(_ship_id())
+		_accent = ShipData.ship(_ship_id())["accent"]
 	var sz := Vector2(_icon.get_width(), _icon.get_height()) * 0.2
 	var shown := mini(n, 5)
 	for i in shown:
@@ -170,7 +201,7 @@ func _draw_intro(t: float) -> void:
 		UiKit.text(self, _f_body, Vector2(480, cy + 42.0), "100 shots – destroy 20 demons", 20, Color(C_VALUE, a), HORIZONTAL_ALIGNMENT_CENTER)
 	else:
 		var planet_name: String = LevelData.PLANET_NAMES[_planet]
-		UiKit.text(self, _f_label, Vector2(480, cy - 34.0), planet_name.to_upper() + "  ·  " + Run.difficulty_name(), 12,
+		UiKit.text(self, _f_label, Vector2(480, cy - 34.0), planet_name.to_upper() + "  ·  " + _difficulty_name(), 12,
 			Color(C_ACCENT, a), HORIZONTAL_ALIGNMENT_CENTER)
 		_glow_text(Vector2(480, cy + 12.0), "LEVEL %d" % level, 54, a, e)
 		UiKit.text(self, _f_body, Vector2(480, cy + 44.0), String(LevelData.level(level)["name"]).to_upper(), 20,
@@ -207,3 +238,28 @@ func _draw_pause() -> void:
 	_glow_text(Vector2(480, cy - 10.0), "PAUSED", 56, 1.0, 1.0)
 	UiKit.text(self, _f_body, Vector2(480, cy + 36.0), "P / ESC / START   resume", 20, C_VALUE, HORIZONTAL_ALIGNMENT_CENTER)
 	UiKit.text(self, _f_body, Vector2(480, cy + 64.0), "Q / BACK   quit to title", 20, C_LABEL, HORIZONTAL_ALIGNMENT_CENTER)
+
+
+# --- Attract mode (demo) -------------------------------------------------------------------------
+## Unobtrusive overlay that never covers the play: "DEMO" in the free band under the top bar and a gently
+## blinking "PRESS ANY BUTTON" in the ground strip below the ship.
+func _draw_attract() -> void:
+	var a := clampf(anim / 0.4, 0.0, 1.0)
+	var demo := "DEMO"
+	var size := 18
+	var spacing := 9.0
+	var half := UiKit.spaced_width(_f_value, demo, size, spacing) * 0.5
+	UiKit.divider(self, Vector2(480.0 - half - 62.0, ATTRACT_DEMO_Y - 7.0), 90.0, Color(C_ACCENT, 0.55 * a))
+	UiKit.divider(self, Vector2(480.0 + half + 62.0, ATTRACT_DEMO_Y - 7.0), 90.0, Color(C_ACCENT, 0.55 * a))
+	UiKit.text_spaced(self, _f_value, Vector2(480.0, ATTRACT_DEMO_Y), demo, size, spacing, Color(C_ACCENT, 0.85 * a),
+		HORIZONTAL_ALIGNMENT_CENTER)
+	# Ground strip (685…720): dark pill + blinking prompt.
+	var prompt := "PRESS ANY BUTTON"
+	var psize := 14
+	var cy := LevelData.GROUND_Y + (LevelData.SCREEN_H - LevelData.GROUND_Y) * 0.5
+	var w := UiKit.spaced_width(_f_label, prompt, psize, 3.0)
+	var r := Rect2(480.0 - w * 0.5 - 22.0, cy - 12.0, w + 44.0, 24.0)
+	UiKit.backing(self, r, 0.85 * a)
+	var blink := 0.7 + 0.3 * cos(anim * TAU * ATTRACT_BLINK_HZ)
+	UiKit.text_spaced(self, _f_label, Vector2(480.0, UiKit.baseline_for(_f_label, psize, cy)), prompt, psize, 3.0,
+		Color(C_VALUE, blink * a), HORIZONTAL_ALIGNMENT_CENTER)
