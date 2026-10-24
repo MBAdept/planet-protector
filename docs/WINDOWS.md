@@ -25,7 +25,7 @@ Umlaute richtig zeigt).
 - x86_64, Release, PCK eingebettet, kein Konsolen-Wrapper, dieselben Filter wie das Linux-Preset
   (`*.json, *.raw, *.bin, *.txt` dazu, `tests/*` und `dev/*` weg). Das Linux-Preset ist unverändert.
 - EXE-Ressourcen setzt Godot 4.7 selbst (`application/modify_resources`, kein rcedit nötig): Icon aus `game/icon.ico`,
-  Produktname und Dateibeschreibung „Planet Protector“, Datei- und Produktversion `1.1.0.0`, keine Firma, kein Copyright.
+  Produktname und Dateibeschreibung „Planet Protector“, Datei- und Produktversion `1.2.0.0`, keine Firma, kein Copyright.
   Bei einer neuen Version `application/file_version` und `application/product_version` anpassen (Format `a.b.c.d`).
 - `game/icon.ico` wurde aus `game/icon.png` erzeugt (16, 20, 24, 32, 40, 48, 64, 128 und 256 px); Godot übernimmt davon
   16/32/48/64/128/256 in die EXE. Neu erzeugen:
@@ -64,7 +64,7 @@ xvfb-run -a -s "-screen 0 1280x960x24" wine PlanetProtector.exe --rendering-driv
   wechselt Godot ohne Absturz von WASAPI auf Dummy.
 - Icon und Versionsdaten mit einem kleinen Win32-Testprogramm geprüft (`ExtractIconExW`, `PrivateExtractIconsW` mit
   16/32/48/256 px, `GetFileVersionInfoW`): Das Icon ist korrekt, ProductName/FileDescription sind „Planet Protector“,
-  die Version ist 1.1.0.0, CompanyName und LegalCopyright fehlen. (Eigenheit von Godot 4.7.2: Der Name der
+  die Version ist 1.2.0.0, CompanyName und LegalCopyright fehlen. (Eigenheit von Godot 4.7.2: Der Name der
   Icon-Gruppe in der EXE ist leer statt „ICON“. Für Explorer und die Icon-APIs ist das ohne Folgen.)
 - Unter Wine nicht prüfbar: die Darstellung mit ANGLE (der HLSL-Compiler von Wine kann die Geometry-Shader von ANGLE
   nicht übersetzen, das Bild bleibt weiß; Windows bringt dafür `d3dcompiler_47` mit), der automatische Wechsel zu
