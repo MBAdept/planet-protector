@@ -8,10 +8,12 @@ extends ScreenBase
 ## setup args: {"difficulty", "score", "time", "level", "ship"} (default: from Run),
 ##             optional "initial_name" (dev / screenshots).
 
-const BOX_W := 72.0
-const BOX_H := 88.0
-const BOX_GAP := 16.0
-const BOX_Y := 334.0
+# One box per character: NameEditor.max_len() = 8 boxes (originally 5 × 72 px) centred at 960 × 720.
+const BOX_W := 64.0
+const BOX_H := 84.0
+const BOX_GAP := 12.0
+const BOX_Y := 336.0
+const GLYPH_SIZE := 40          ## the widest character (W) leaves 8 px on each side of a box
 
 var editor := NameEditor.new()
 var _diff := 1
@@ -108,15 +110,20 @@ func _summary(x: float, baseline: float, label: String, value: String, col: Colo
 	UiKit.text(self, Assets.font_title, Vector2(x, baseline), value, 28, col, HORIZONTAL_ALIGNMENT_CENTER)
 
 
+## Box of character i (0 .. NameEditor.max_len() - 1); the row is centred on the screen.
+static func box_rect(i: int) -> Rect2:
+	var n := NameEditor.max_len()
+	var x0 := CX - (n * BOX_W + (n - 1) * BOX_GAP) * 0.5
+	return Rect2(x0 + i * (BOX_W + BOX_GAP), BOX_Y, BOX_W, BOX_H)
+
+
 func _draw_boxes() -> void:
 	var n := NameEditor.max_len()
-	var total := n * BOX_W + (n - 1) * BOX_GAP
-	var x0 := CX - total * 0.5
 	var font := Assets.font_title_heavy
 	var text := editor.text
 	var pulse := 0.5 + 0.5 * sin(time * 5.0)
 	for i in n:
-		var r := Rect2(x0 + i * (BOX_W + BOX_GAP), BOX_Y, BOX_W, BOX_H)
+		var r := box_rect(i)
 		var is_cursor := i == editor.cursor
 		var filled := i < text.length()
 		if is_cursor:
@@ -131,15 +138,15 @@ func _draw_boxes() -> void:
 		else:
 			UiKit.panel_ex(self, r, Color(UiKit.COLOR_PANEL, 0.45), Color(UiKit.COLOR_BORDER, 0.16), 10, 1)
 		var cx := r.get_center().x
-		var by := UiKit.baseline_for(font, 46, r.get_center().y)
+		var by := UiKit.baseline_for(font, GLYPH_SIZE, r.get_center().y)
 		if filled:
 			var fl := 1.0 - clampf((time - float(_flash.get(i, -10.0))) / 0.25, 0.0, 1.0)
 			var col := UiKit.COLOR_TEXT.lerp(UiKit.COLOR_GOLD, fl)
-			UiKit.text(self, font, Vector2(cx, by), text[i], 46, col, HORIZONTAL_ALIGNMENT_CENTER)
-		elif text.is_empty():
-			# Placeholder: an empty name is stored as PILOT.
-			UiKit.text(self, font, Vector2(cx, by), Settings.DEFAULT_NAME[i], 46, Color(UiKit.COLOR_FAINT, 0.28),
-				HORIZONTAL_ALIGNMENT_CENTER)
+			UiKit.text(self, font, Vector2(cx, by), text[i], GLYPH_SIZE, col, HORIZONTAL_ALIGNMENT_CENTER)
+		elif text.is_empty() and i < Settings.DEFAULT_NAME.length():
+			# Placeholder: an empty name is stored as PILOT (first 5 of the 8 boxes).
+			UiKit.text(self, font, Vector2(cx, by), Settings.DEFAULT_NAME[i], GLYPH_SIZE,
+				Color(UiKit.COLOR_FAINT, 0.28), HORIZONTAL_ALIGNMENT_CENTER)
 		if is_cursor and not filled:
 			var blink := 1.0 if fmod(time, 1.0) < 0.6 else 0.15
 			draw_rect(Rect2(cx - 18, r.end.y - 18, 36, 4), Color(UiKit.COLOR_HILITE, blink))

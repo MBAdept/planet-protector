@@ -50,4 +50,5 @@ func test_highscore_sort() -> void:
 	check_eq(l[0]["time"], 3.0)
 	check_eq(l[2]["score"], 10)
 	check_eq(Settings.sanitize_name(""), "PILOT")
-	check_eq(Settings.sanitize_name("ab#c-d_e"), "ABC-D")
+	check_eq(Settings.sanitize_name("ab#c-d_e"), "ABC-D_E")
+	check_eq(Settings.sanitize_name("ab#c-d_e-f9"), "ABC-D_E-", "cut to 8 characters")

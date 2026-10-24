@@ -2,9 +2,9 @@ class_name NameEditor
 extends RefCounted
 ## Pure highscore-name editing logic (docs/SPEC.md §13). No nodes; the name-entry screen feeds it.
 ##
-## - Max 5 characters from Settings.NAME_CHARS ("A–Z 0–9 _ -").
+## - Max Settings.NAME_MAX = 8 characters (client decision, originally 5) from Settings.NAME_CHARS ("A–Z 0–9 _ -").
 ## - The cursor stands on an existing character or on the next free position ("empty end field"),
-##   never beyond index 4: 0 <= cursor <= min(len, 4).
+##   never beyond index 7 (NAME_MAX - 1): 0 <= cursor <= min(len, 7).
 ## - Horizontal input only moves the cursor.
 ## - Vertical input changes the character under the cursor (up = next in NAME_CHARS, down = previous,
 ##   wrapping). On the empty end field it first inserts "A" WITHOUT advancing the cursor.
@@ -109,7 +109,7 @@ func type_char(ch: String) -> bool:
 	return true
 
 
-## Name to store; empty → "PILOT". (`text` only ever holds valid characters, max 5 – see type_char/_cycle;
+## Name to store; empty → "PILOT". (`text` only ever holds valid characters, max 8 – see type_char/_cycle;
 ## Settings.insert_highscore sanitises again.)
 func final_name() -> String:
 	return text if not text.is_empty() else Settings.DEFAULT_NAME

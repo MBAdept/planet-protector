@@ -166,5 +166,5 @@ func test_highscore_columns_aligned() -> void:
 
 
 func test_name_editor_respects_settings_limits() -> void:
-	check_eq(NameEditor.max_len(), 5)
+	check_eq(NameEditor.max_len(), 8)
 	check_eq(NameEditor.chars(), "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")

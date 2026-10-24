@@ -350,11 +350,14 @@ Controller (Godot/SDL positional mapping; PlayStation: Cross = A, Circle = B, Sq
 
 - Four separate top-10 lists (one per difficulty). Sort: score descending, then real play time ascending.
 - Time stored with full float precision; displayed with tenths `MM:SS.t`.
-- Name: max 5 chars from `A–Z 0–9 _ -`; empty → `PILOT`.
+- Name: max 8 chars from `A–Z 0–9 _ -` (client decision, originally 5); empty → `PILOT`. Highscore files with
+  names of up to 5 characters stay valid and load unchanged; longer names in a hand-edited file are cut to 8 on load.
+  Every screen that shows a name fits 8 of the widest characters (`WWWWWWWW`): 8 boxes in the name entry, the
+  highscore NAME column (clear of SCORE with a 6-digit score) and the title BEST line.
 - Column headings must stand exactly above their values (same x anchor and alignment).
 - Controller name editor: horizontal moves only the cursor; vertical changes the character. On the empty end field a vertical
   input first inserts `A` without advancing the cursor. The cursor can only be on existing characters or the next free position,
-  never beyond 5 characters (index ≤ 4). On a diagonal stick input only the stronger axis counts; a tie counts as horizontal
+  never beyond 8 characters (index ≤ 7). On a diagonal stick input only the stronger axis counts; a tie counts as horizontal
   (stick hysteresis: §12).
   D-pad diagonals are treated the same way (tie → horizontal). B deletes the last character, X/Y (and Start) confirm.
   Keyboard: typing appends, Backspace deletes, Enter confirms; arrow keys behave like the D-pad.

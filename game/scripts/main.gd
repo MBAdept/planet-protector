@@ -6,7 +6,9 @@ extends Node
 ## Dev / test command line (user args after `--`):
 ##   --level=N --ship=K --difficulty=D       start a run directly at level N (skips menus)
 ##   --dev [--invincible] [--autoplay]       dev flags for GameScreen (Run.dev_flags)
-##   --screen=<name> [--arrival=N] [--name=ABC]  open one screen with fake run data (see RunFlow.SCREENS)
+##   --screen=<name> [--arrival=N] [--name=ABC]  open one screen with fake run data (see RunFlow.SCREENS);
+##                                           --name: initial name (name_entry), highlighted row of the fake
+##                                           list (highscores), fake BEST line (title) – only without stored scores
 ##   --screen=attract                        start a demo run (attract mode) directly
 ##   --attract-after=<s>                     idle time on the title before the demo starts (default 90)
 ##   --attract-level=N --attract-seed=S      fixed demo level (1–20 except 13) / random seed (deterministic captures)
@@ -234,7 +236,10 @@ func _open_dev_screen(screen_name: String) -> void:
 		"title", "ship_select":
 			Run.active = false
 			Run.score = 0
-			_go(RunFlow.step(screen_name))
+			var extra := {}
+			if screen_name == "title" and _args.has("name") and Settings.get_highscores(Settings.difficulty).is_empty():
+				extra["preview_best"] = {"name": _arg_name(), "score": 48000}
+			_go(RunFlow.step(screen_name), extra)
 		"highscores":
 			var extra := {"difficulty": diff}
 			if Settings.get_highscores(diff).is_empty():
@@ -247,8 +252,16 @@ func _open_dev_screen(screen_name: String) -> void:
 			_go(RunFlow.step(screen_name, lvl))
 
 
+## --name as it would be stored (upper case, valid characters, max Settings.NAME_MAX).
+func _arg_name() -> String:
+	return Settings.sanitize_name(String(_args.get("name", "")))
+
+
+## Fake top 10 with names of 2–8 characters; --name replaces the highlighted row (index 2).
 func _fake_highscores() -> Array:
-	var names := ["NOVA", "ACE", "ZED-9", "PILOT", "KIRA", "MAX_", "RAY", "IO", "VEGA", "B0B"]
+	var names := ["STARDUST", "ACE", "ZED-9", "PILOT", "KIRA", "MAX_", "COMET-42", "IO", "VEGA", "B0B"]
+	if _args.has("name"):
+		names[2] = _arg_name()
 	var out: Array = []
 	for i in 10:
 		out.append({"name": names[i], "score": 48000 - i * 3870 - (i * i) * 113,

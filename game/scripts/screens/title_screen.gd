@@ -9,7 +9,8 @@ extends ScreenBase
 ## mouse button, joypad button, D-pad, stick beyond 0.5) the title hands over to the demo; any input restarts
 ## the idle timer.
 ## finished: "start" | "highscores" | "quit" | "attract".
-## setup args: {"select": <item id>} (optional initial selection), {"attract_after": <s>} (idle time, dev/tests).
+## setup args: {"select": <item id>} (optional initial selection), {"attract_after": <s>} (idle time, dev/tests),
+##             {"preview_best": {name, score}} (dev screenshots only: BEST line while the stored list is empty).
 
 const GAME_TITLE := "PLANET PROTECTOR"
 const TAGLINE := "DEFEND THE SOLAR SYSTEM"
@@ -28,6 +29,8 @@ const MENU_W := 500.0
 const MENU_FONT := 19
 const MENU_PAD := 34.0          ## panel margin above the first / below the last row centre
 const HINT_Y := 664.0
+const BEST_X := W - 26.0        ## right edge of the BEST line (name up to Settings.NAME_MAX = 8 characters)
+const BEST_SIZE := 18
 
 var _sel := 0
 var _demons: Array[Dictionary] = []
@@ -48,7 +51,7 @@ func _enter() -> void:
 
 func _refresh_best() -> void:
 	var list := Settings.get_highscores(Settings.difficulty)
-	_best = list[0] if not list.is_empty() else {}
+	_best = list[0] if not list.is_empty() else args.get("preview_best", {})
 
 
 func _star_velocity() -> Vector2:
@@ -242,14 +245,19 @@ func _draw_logo() -> void:
 		HORIZONTAL_ALIGNMENT_CENTER)
 
 
+## "NAME  SCORE" of the best entry (drawn right-aligned at BEST_X in font_title, BEST_SIZE).
+static func best_text(entry: Dictionary) -> String:
+	return "%s  %s" % [entry["name"], Fmt.score(int(entry["score"]))]
+
+
 func _draw_best() -> void:
 	if _best.is_empty():
 		return
-	var x := W - 26.0
-	UiKit.text(self, Assets.font_body, Vector2(x, 32), "BEST · %s" % ShipData.difficulty(Settings.difficulty)["name"],
-		13, UiKit.COLOR_FAINT, HORIZONTAL_ALIGNMENT_RIGHT)
-	UiKit.text(self, Assets.font_title, Vector2(x, 56), "%s  %s" % [_best["name"], Fmt.score(int(_best["score"]))],
-		18, UiKit.COLOR_GOLD, HORIZONTAL_ALIGNMENT_RIGHT)
+	var diff_name := String(ShipData.difficulty(Settings.difficulty)["name"])
+	UiKit.text(self, Assets.font_body, Vector2(BEST_X, 32), "BEST · %s" % diff_name, 13, UiKit.COLOR_FAINT,
+		HORIZONTAL_ALIGNMENT_RIGHT)
+	UiKit.text(self, Assets.font_title, Vector2(BEST_X, 56), best_text(_best), BEST_SIZE, UiKit.COLOR_GOLD,
+		HORIZONTAL_ALIGNMENT_RIGHT)
 
 
 func _draw_hints() -> void:

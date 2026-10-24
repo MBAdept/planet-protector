@@ -1,5 +1,5 @@
 extends TestBase
-## NameEditor rules (docs/SPEC.md §13).
+## NameEditor rules (docs/SPEC.md §13): names of up to 8 characters (client decision, originally 5).
 
 
 func _ed(text: String = "", cursor: int = -1) -> NameEditor:
@@ -79,19 +79,60 @@ func test_horizontal_only_moves_cursor() -> void:
 	check_eq(e.cursor, 0, "clamped at 0")
 
 
-func test_cursor_never_beyond_index_4() -> void:
-	var e := _ed("ABCDE", 4)
+func test_max_length_is_8() -> void:
+	check_eq(Settings.NAME_MAX, 8, "client decision: 8 characters (originally 5)")
+	check_eq(NameEditor.max_len(), 8)
+	check_eq(_ed("ABCDEFG").max_cursor(), 7, "7 characters: cursor may reach the 8th box")
+	check_eq(_ed("ABCDEFGH").max_cursor(), 7, "full name: the cursor stays on the 8th character")
+	check_eq(_ed("ABCDE").max_cursor(), 5, "5 characters are no longer full: the 6th box is the end field")
+
+
+func test_cursor_never_beyond_index_7() -> void:
+	var e := _ed("ABCDEFGH", 7)
 	e.move_right()
-	check_eq(e.cursor, 4)
+	check_eq(e.cursor, 7)
 	e.char_up()
-	check_eq(e.text, "ABCDF", "vertical on index 4 changes the 5th char, no 6th char")
-	check_eq(e.text.length(), 5)
-	var f := _ed("ABCD", 4)
+	check_eq(e.text, "ABCDEFGI", "vertical on index 7 changes the 8th char, no 9th char")
+	check_eq(e.text.length(), 8)
+	e.char_down()
+	e.char_down()
+	check_eq(e.text, "ABCDEFGG")
+	check_eq(e.cursor, 7)
+	# Walking right through a full name stops on the last character.
+	var g := _ed("ABCDEFGH", 0)
+	for i in 12:
+		g.move_right()
+		check(g.cursor <= 7, "cursor %d never beyond index 7" % g.cursor)
+	check_eq(g.cursor, 7)
+	check_eq(g.text, "ABCDEFGH", "moving never changes the name")
+
+
+func test_insert_at_position_7() -> void:
+	var f := _ed("ABCDEFG", 7)
+	check(f.is_on_end_field(), "index 7 is the empty end field of a 7-character name")
 	f.char_up()
-	check_eq(f.text, "ABCDA", "end field at index 4 inserts the 5th char")
-	check_eq(f.cursor, 4)
+	check_eq(f.text, "ABCDEFGA", "end field at index 7 inserts the 8th char")
+	check_eq(f.cursor, 7, "the cursor does not advance")
+	check(not f.is_on_end_field(), "now on the 8th character")
 	f.move_right()
-	check_eq(f.cursor, 4)
+	check_eq(f.cursor, 7, "no end field after 8 characters")
+	f.char_up()
+	check_eq(f.text, "ABCDEFGB", "the next vertical input changes the 8th char, no 9th char")
+	check_eq(f.text.length(), 8)
+	var d := _ed("ABCDEFG", 7)
+	d.char_down()
+	check_eq(d.text, "ABCDEFGA", "down on the end field also inserts A")
+	check_eq(d.cursor, 7)
+
+
+func test_build_8_character_name_with_controller() -> void:
+	var e := NameEditor.new()
+	for i in 10:   # more rounds than boxes: the 9th and 10th must not add anything
+		e.apply_direction(Vector2i(0, -1))   # up: insert A (or A → B on a filled box)
+		e.apply_direction(Vector2i(1, 0))    # right: next box
+		check(e.cursor <= 7, "cursor never beyond index 7")
+	check_eq(e.text, "AAAAAAAC", "8 characters; the 9th and 10th round only change the 8th (A → B → C)")
+	check_eq(e.cursor, 7)
 
 
 func test_build_name_with_controller() -> void:
@@ -127,10 +168,14 @@ func test_delete_removes_last_char_and_clamps_cursor() -> void:
 	f.delete_last()
 	check_eq(f.text, "AB")
 	check_eq(f.cursor, 2, "cursor pulled back onto the new end field")
-	var g := _ed("ABCDE", 4)
+	var g := _ed("ABCDEFGH", 7)
 	g.delete_last()
-	check_eq(g.text, "ABCD")
-	check_eq(g.cursor, 4, "index 4 is now the empty end field")
+	check_eq(g.text, "ABCDEFG")
+	check_eq(g.cursor, 7, "index 7 is now the empty end field")
+	var k := _ed("ABCDEFGH", 2)
+	k.delete_last()
+	check_eq(k.text, "ABCDEFG", "B deletes the last character of a full name")
+	check_eq(k.cursor, 2)
 	var h := NameEditor.new()
 	h.delete_last()
 	check_eq(h.text, "", "delete on empty name is a no-op")
@@ -145,9 +190,29 @@ func test_keyboard_typing_appends() -> void:
 	check(e.type_char("_"))
 	check(e.type_char("7"))
 	check_eq(e.text, "ABX_7")
-	check_eq(e.cursor, 4, "cursor never beyond index 4")
+	check_eq(e.cursor, 5, "5 characters are not full: the cursor is on the 6th box")
+	check(e.type_char("-"))
+	check(e.type_char("z"))
+	check(e.type_char("0"))
+	check_eq(e.text, "ABX_7-Z0")
+	check_eq(e.cursor, 7, "cursor never beyond index 7")
 	check(not e.type_char("Q"), "full name rejects more characters")
-	check_eq(e.text, "ABX_7")
+	check_eq(e.text, "ABX_7-Z0")
+
+
+func test_typing_stops_at_8() -> void:
+	var e := NameEditor.new()
+	var accepted := 0
+	for ch in "STARDUST99":
+		if e.type_char(ch):
+			accepted += 1
+	check_eq(accepted, 8, "the 9th and 10th character are rejected")
+	check_eq(e.text, "STARDUST")
+	check_eq(e.cursor, 7)
+	check_eq(e.final_name(), "STARDUST")
+	e.delete_last()
+	check(e.type_char("Y"), "after a delete the 8th character can be typed again")
+	check_eq(e.text, "STARDUSY")
 
 
 func test_keyboard_rejects_invalid_chars() -> void:
@@ -162,6 +227,7 @@ func test_keyboard_rejects_invalid_chars() -> void:
 func test_final_name_empty_is_pilot() -> void:
 	check_eq(NameEditor.new().final_name(), "PILOT")
 	check_eq(_ed("AB_-9").final_name(), "AB_-9")
+	check_eq(_ed("AB_-9XYZ").final_name(), "AB_-9XYZ")
 	check_eq(_ed("Z").final_name(), "Z")
 
 
@@ -169,3 +235,6 @@ func test_initial_text_constructor() -> void:
 	var e := NameEditor.new("ace!x")
 	check_eq(e.text, "ACEX")
 	check_eq(e.cursor, 4)
+	var f := NameEditor.new("commander-1")
+	check_eq(f.text, "COMMANDE", "an over-long initial name is cut to 8")
+	check_eq(f.cursor, 7)

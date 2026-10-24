@@ -11,14 +11,20 @@ const HEADER_Y := 196.0
 const ROW_Y0 := 242.0
 const ROW_H := 38.0
 ## Column definitions: [heading, anchor x, alignment]. Values use the same anchor and alignment.
+## NAME is wide enough for Settings.NAME_MAX (8) of the widest character ("WWWWWWWW", 170 px) and still leaves
+## room for a 6-digit SCORE; SHIP ends inside the panel with the longest ship name.
 const COLUMNS := [
-	["RANK", 150.0, HORIZONTAL_ALIGNMENT_RIGHT],
-	["NAME", 184.0, HORIZONTAL_ALIGNMENT_LEFT],
-	["SCORE", 450.0, HORIZONTAL_ALIGNMENT_RIGHT],
-	["LEVEL", 544.0, HORIZONTAL_ALIGNMENT_RIGHT],
-	["TIME", 680.0, HORIZONTAL_ALIGNMENT_RIGHT],
-	["SHIP", 718.0, HORIZONTAL_ALIGNMENT_LEFT],
+	["RANK", 148.0, HORIZONTAL_ALIGNMENT_RIGHT],
+	["NAME", 178.0, HORIZONTAL_ALIGNMENT_LEFT],
+	["SCORE", 474.0, HORIZONTAL_ALIGNMENT_RIGHT],
+	["LEVEL", 562.0, HORIZONTAL_ALIGNMENT_RIGHT],
+	["TIME", 690.0, HORIZONTAL_ALIGNMENT_RIGHT],
+	["SHIP", 722.0, HORIZONTAL_ALIGNMENT_LEFT],
 ]
+## Font sizes: headings (font_body_bold), values (font_title), ship names (font_body_bold).
+const HEADING_SIZE := 14
+const VALUE_SIZE := 18
+const SHIP_SIZE := 16
 const TAB_W := 168.0
 const TAB_H := 36.0
 const TAB_Y := 96.0
@@ -63,6 +69,11 @@ static func column(i: int) -> Array:
 	return COLUMNS[i]
 
 
+## NAME placeholder of an empty row: one dash per possible character (Settings.NAME_MAX).
+static func empty_name() -> String:
+	return "-".repeat(Settings.NAME_MAX)
+
+
 func _cell(col: int, baseline: float, s: String, font: Font, size: int, color: Color) -> void:
 	var c: Array = COLUMNS[col]
 	UiKit.text(self, font, Vector2(float(c[1]), baseline), s, size, color, c[2])
@@ -74,7 +85,7 @@ func _draw() -> void:
 	_draw_tabs()
 	UiKit.panel(self, PANEL, 0.6)
 	for i in COLUMNS.size():
-		_cell(i, HEADER_Y, COLUMNS[i][0], Assets.font_body_bold, 14, UiKit.COLOR_HILITE)
+		_cell(i, HEADER_Y, COLUMNS[i][0], Assets.font_body_bold, HEADING_SIZE, UiKit.COLOR_HILITE)
 	UiKit.divider(self, Vector2(CX, HEADER_Y + 14), PANEL.size.x - 60, Color(UiKit.COLOR_HILITE, 0.4), 1.5)
 	for r in Settings.LIST_SIZE:
 		var by := ROW_Y0 + r * ROW_H + 8.0
@@ -93,16 +104,18 @@ func _draw() -> void:
 			var e: Dictionary = _entries[r]
 			var tc := UiKit.COLOR_GOLD.lerp(Color.WHITE, 0.3) if hl else UiKit.COLOR_TEXT
 			var ship: Dictionary = ShipData.ship(int(e.get("ship", 0)))
-			_cell(0, by, "%d." % (r + 1), Assets.font_title, 18, rank_col if not hl else tc)
-			_cell(1, by, String(e.get("name", "")), Assets.font_title, 18, tc)
-			_cell(2, by, Fmt.score(int(e.get("score", 0))), Assets.font_title, 18, UiKit.COLOR_GOLD if not hl else tc)
-			_cell(3, by, str(int(e.get("level", 1))), Assets.font_title, 18, tc)
-			_cell(4, by, Fmt.time(float(e.get("time", 0.0))), Assets.font_title, 18, tc)
-			_cell(5, by, String(ship["name"]), Assets.font_body_bold, 16, Color(ship["accent"]).lerp(Color.WHITE, 0.45))
+			_cell(0, by, "%d." % (r + 1), Assets.font_title, VALUE_SIZE, rank_col if not hl else tc)
+			_cell(1, by, String(e.get("name", "")), Assets.font_title, VALUE_SIZE, tc)
+			_cell(2, by, Fmt.score(int(e.get("score", 0))), Assets.font_title, VALUE_SIZE,
+				UiKit.COLOR_GOLD if not hl else tc)
+			_cell(3, by, str(int(e.get("level", 1))), Assets.font_title, VALUE_SIZE, tc)
+			_cell(4, by, Fmt.time(float(e.get("time", 0.0))), Assets.font_title, VALUE_SIZE, tc)
+			_cell(5, by, String(ship["name"]), Assets.font_body_bold, SHIP_SIZE,
+				Color(ship["accent"]).lerp(Color.WHITE, 0.45))
 		else:
-			_cell(0, by, "%d." % (r + 1), Assets.font_title, 18, Color(UiKit.COLOR_FAINT, 0.6))
-			_cell(1, by, "-----", Assets.font_title, 18, Color(UiKit.COLOR_FAINT, 0.35))
-			_cell(2, by, "0", Assets.font_title, 18, Color(UiKit.COLOR_FAINT, 0.35))
+			_cell(0, by, "%d." % (r + 1), Assets.font_title, VALUE_SIZE, Color(UiKit.COLOR_FAINT, 0.6))
+			_cell(1, by, empty_name(), Assets.font_title, VALUE_SIZE, Color(UiKit.COLOR_FAINT, 0.35))
+			_cell(2, by, "0", Assets.font_title, VALUE_SIZE, Color(UiKit.COLOR_FAINT, 0.35))
 	if _entries.is_empty():
 		UiKit.text(self, Assets.font_body, Vector2(CX, PANEL.end.y - 20), "No entries yet – be the first!", 16,
 			UiKit.COLOR_DIM, HORIZONTAL_ALIGNMENT_CENTER)
