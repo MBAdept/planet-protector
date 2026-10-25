@@ -3,7 +3,9 @@ extends Node
 ## played by the autopilot (pass --dev --autoplay [--invincible]), every other screen is confirmed by
 ## injected Enter presses. Logs every screen change with the run state and optionally saves screenshots.
 ##   godot --headless --path game res://dev/playthrough.tscn -- --dev --autoplay --invincible --level=1 \
-##       [--timescale=4] [--shots=/abs/dir] [--limit=1800]
+##       [--timescale=4] [--shots=/abs/dir] [--limit=1800] [--display=<0|1|2>]
+## --display: display mode (SPEC §18), read by the Display autoload / Main; the log states the mode and the
+## playfield width every level is played with.
 ## Ends (exit code 0) when the title screen is reached again after the run, or exit code 1 on timeout.
 
 var _main: Node
@@ -29,34 +31,37 @@ func _ready() -> void:
 		DirAccess.make_dir_recursive_absolute(_shots)
 	_main = load("res://main.tscn").instantiate()
 	add_child(_main)
+	_note("display mode %d (%s): logical %s" % [Display.mode(), Display.MODE_NAMES[Display.mode()], Display.logical_size()])
 
 
 func _process(delta: float) -> void:
 	var real := delta / maxf(Engine.time_scale, 0.001)
 	_t += real
 	_screen_t += real
-	var name: String = String(_main.get("_screen_name"))
-	if name != _last_screen:
-		_note("%7.1fs  %-12s level=%d score=%d lives=%d time=%s" % [_t, name, Run.level, Run.score, Run.lives,
-			Fmt.time(Run.active_time)])
-		if name == "title" and _started_run:
+	var scr: String = String(_main.get("_screen_name"))
+	if scr != _last_screen:
+		var screen: Node = _main.get("_screen")
+		var world: Variant = screen.get("world") if screen != null and scr == "level" else null
+		_note("%7.1fs  %-12s level=%d score=%d lives=%d time=%s%s" % [_t, scr, Run.level, Run.score, Run.lives,
+			Fmt.time(Run.active_time), "  width=%d" % (world as GameWorld).width if world != null else ""])
+		if scr == "title" and _started_run:
 			_finish(0)
 			return
-		if name != "title":
-			_started_run = true
-		_last_screen = name
+		if scr == "level":
+			_started_run = true   # a screen before the run (e.g. the first-start display choice) does not count
+		_last_screen = scr
 		_screen_t = 0.0
 	if _t > _limit:
 		_note("TIMEOUT")
 		_finish(1)
 		return
 	if _shots != "" and DisplayServer.get_name() != "headless":
-		var key := "%s_%d" % [name, Run.level]
-		var when := 6.0 if name == "level" else (12.5 if name == "arrival" else 1.2)
+		var key := "%s_%d" % [scr, Run.level]
+		var when := 6.0 if scr == "level" else (12.5 if scr == "arrival" else 1.2)
 		if not _shot_taken.has(key) and _screen_t >= when:
 			_shot_taken[key] = true
-			get_viewport().get_texture().get_image().save_png("%s/%02d_%s.png" % [_shots, Run.level, name])
-	if name != "level":
+			get_viewport().get_texture().get_image().save_png("%s/%02d_%s.png" % [_shots, Run.level, scr])
+	if scr != "level":
 		_drive_menu(real)
 
 

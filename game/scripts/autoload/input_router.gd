@@ -49,8 +49,7 @@ func _process(delta: float) -> void:
 		if _latched.has(b) and not _down[b]:
 			_latched.erase(b)
 	if just_pressed(B.F11):
-		Settings.set_fullscreen(not Settings.fullscreen)
-		apply_window_mode()
+		Display.toggle_fullscreen()   # mode 0: fullscreen on/off (persisted); 16:9 modes: fullscreen ↔ 16:9 window
 	_update_menu_direction(delta)
 
 
@@ -61,12 +60,9 @@ func _input(event: InputEvent) -> void:
 			text_char.emit(String.chr(u).to_upper())
 
 
+## Window mode of the current display mode (kept for callers of the old API; see Display.apply_window).
 func apply_window_mode() -> void:
-	if DisplayServer.get_name() == "headless":
-		return
-	var mode := DisplayServer.WINDOW_MODE_FULLSCREEN if Settings.fullscreen else DisplayServer.WINDOW_MODE_WINDOWED
-	if DisplayServer.window_get_mode() != mode:
-		DisplayServer.window_set_mode(mode)
+	Display.apply_window()
 
 
 # --- Public API ----------------------------------------------------------------------------------

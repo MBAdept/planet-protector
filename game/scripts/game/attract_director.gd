@@ -23,6 +23,8 @@ extends RefCounted
 ## its (at most 6) hits – only the salvo still in flight may add the few figures it touches.
 ##
 ## Time is the screen's real time; on NORMAL it equals game time (explosion lengths, fireball speed).
+## Playfield width (SPEC §18.1): the demo world has the width of the run's display mode (make_world(width)); the
+## choreography is the same at 960 and 1280 (the autopilot takes every limit from the world).
 
 const Autopilot := preload("res://scripts/game/autopilot.gd")
 
@@ -101,9 +103,9 @@ func set_duration(d: float) -> void:
 	t_vulnerable = maxf(DURATION_MIN - HIT_TO_END, t_die - VULNERABLE_WINDOW)
 
 
-## The demo world: NORMAL, one life, invincible until t_vulnerable.
-func make_world() -> GameWorld:
-	var w := GameWorld.new(level, DIFFICULTY, ship_id, LIVES, world_seed)
+## The demo world: NORMAL, one life, invincible until t_vulnerable; `width` = playfield width (960 or 1280).
+func make_world(width: float = LevelData.SCREEN_W) -> GameWorld:
+	var w := GameWorld.new(level, DIFFICULTY, ship_id, LIVES, world_seed, width)
 	w.invincible = true
 	return w
 

@@ -4,20 +4,44 @@ extends ScreenBase
 ## name entry if the score qualifies, else the highscores).
 
 const CONFIRM_DELAY := 1.5
+## The Earth drawn here: the in-game planet rendered again with a 1280 px sphere (tools/blender/planets_hd.py,
+## same textures, view and lighting). The victory Earth is up to 1280 logical px wide and the 16:9 modes render
+## at ×1.5 / ×2.0, so the 640 px in-game sprite would be blown up 3× / 4×; this one is at most 2× (2560×1440),
+## 1.5× at 1080p and 1:1 in the classic 1280 × 960 window. Falls back to the in-game sprite if it is missing.
+const EARTH_ASSET := "earth_hd"
+const EARTH_FALLBACK := "earth"
 
 var _sparks: Array[Vector4] = []   # x, y, speed, phase
+var _earth := EARTH_ASSET
 
 
 func _enter() -> void:
 	AudioManager.stop_music()
+	# Smooth (linear + mipmaps, like the title) instead of the project's nearest filter: the big Earth is scaled
+	# up to the window / render resolution and nearest sampling would show its texels as blocks.
+	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	_earth = earth_asset()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 2020
-	for i in 46:
-		_sparks.append(Vector4(rng.randf() * W, rng.randf() * H, rng.randf_range(10.0, 32.0), rng.randf() * TAU))
+	# Spread over the whole canvas (1280 wide in 16:9: proportionally more of them).
+	for i in roundi(46.0 * sw / W):
+		_sparks.append(Vector4(left_x() + rng.randf() * sw, rng.randf() * H, rng.randf_range(10.0, 32.0),
+			rng.randf() * TAU))
 
 
 func _star_velocity() -> Vector2:
 	return Vector2(-6, 0)
+
+
+## Planet asset of the victory Earth: EARTH_ASSET, or the in-game EARTH_FALLBACK if that file is missing.
+static func earth_asset() -> String:
+	return EARTH_ASSET if ResourceLoader.exists(Assets.SPRITES + "planets/%s.png" % EARTH_ASSET) else EARTH_FALLBACK
+
+
+## Diameter (logical px) of the risen victory Earth on a canvas canvas_w wide: it fills the canvas width
+## (960 in 4:3, 1280 in 16:9).
+static func earth_diameter(canvas_w: float) -> float:
+	return 960.0 * canvas_w / W
 
 
 func _tick(_delta: float) -> void:
@@ -27,12 +51,13 @@ func _tick(_delta: float) -> void:
 
 
 func _draw() -> void:
-	# Earth rising from below, big, with a soft atmosphere glow.
+	# Earth rising from below, big, with a soft atmosphere glow. It fills the canvas width (960 or 1280) and always
+	# shows the same cap height (its top at y = 425 once risen).
 	var rise := 1.0 - ramp(0.0, 3.5)
-	var c := Vector2(CX, 905.0 + 110.0 * rise)
-	var d := 960.0
+	var d := earth_diameter(sw)
+	var c := Vector2(CX, 425.0 + d * 0.5 + 110.0 * rise)
 	UiKit.glow_spot(self, c, Vector2(d, d) * 0.64, Color(0.35, 0.6, 1.0, 0.34))
-	Assets.draw_planet(self, "earth", c, d)
+	Assets.draw_planet(self, _earth, c, d)
 	# Thin bright atmosphere rim on top of the sphere.
 	draw_arc(c, d * 0.5 + 1.5, PI * 1.08, PI * 1.92, 96, Color(0.55, 0.8, 1.0, 0.35), 3.0, true)
 	# Golden sparkles drifting up.

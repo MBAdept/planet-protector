@@ -1,7 +1,8 @@
 extends Node2D
 ## Draws the world's projectiles via ProjectileArt.
 ## Mode SHOTS: own salvos. Mode BULLETS: enemy fireballs + ground splashes – this node lives inside a
-## clipping Control (0,0)-(960,685), so nothing of a fireball is ever drawn below the ground.
+## clipping Control (0,0)-(W,685) (W = playfield width, 960 or 1280), so nothing of a fireball is ever drawn below
+## the ground.
 
 const FxTex := preload("res://scripts/game/fx_tex.gd")
 
@@ -47,21 +48,29 @@ func _draw() -> void:
 			var q := Vector2(x, gy) + Vector2(cos(ang), sin(ang)) * 22.0 * t
 			FxTex.draw_centered(self, FxTex.core(), q, Vector2(3, 3), Color(1.0, 0.7, 0.3, a))
 	for b in world.bullets:
-		# Fade while the fireball sinks into the ground (it is removed once entirely below y = 685).
-		var alpha := clampf((gy + GameWorld.BULLET_HALF - b.y) / (2.0 * GameWorld.BULLET_HALF), 0.0, 1.0)
-		alpha *= side_fade(b.x, b.vx)
-		ProjectileArt.draw_enemy_bullet(self, Vector2(b.x, b.y), Vector2(b.vx, b.vy), b.age, 1.0, alpha)
+		ProjectileArt.draw_enemy_bullet(self, Vector2(b.x, b.y), Vector2(b.vx, b.vy), b.age, 1.0, fireball_alpha(b))
+
+
+## Drawn alpha of an enemy fireball of `world`: it fades while it sinks into the ground (it is removed once
+## entirely below y = 685) and while it leaves sideways. The side fade uses the width of the world being drawn
+## (world.width), never the global display mode, so a 960 world stays classic even in a 16:9 session.
+func fireball_alpha(b: GameWorld.Bullet) -> float:
+	var alpha := clampf((LevelData.GROUND_Y + GameWorld.BULLET_HALF - b.y) / (2.0 * GameWorld.BULLET_HALF), 0.0, 1.0)
+	alpha *= side_fade(b.x, b.vx, world.width)
+	return alpha
 
 
 ## Alpha of a fireball leaving the screen sideways. It is removed once its body is entirely off-screen
-## (head x < -5 / > 965) while its tail is still visible, so it fades out before – but only in the band
-## where it can no longer hit any player position (x ≤ 30 − 21 = 9 / x ≥ 930 + 21 = 951).
-static func side_fade(x: float, vx: float) -> float:
+## (head x < -5 / > W + 5) while its tail is still visible, so it fades out before – but only in the band
+## where it can no longer hit any player position (x ≤ 30 − 21 = 9 / x ≥ (W − 30) + 21 = W − 9).
+## `w` = playfield width W of the world the bullet belongs to; the default is the classic 960 (like the
+## LevelData limit helpers), so the result never depends on the global display mode.
+static func side_fade(x: float, vx: float, w: float = LevelData.SCREEN_W) -> float:
 	var h := GameWorld.BULLET_HALF
 	if vx < 0.0:
 		var safe_l := LevelData.PLAYER_MIN_X - LevelData.PLAYER_HIT_DX
 		return clampf((x + h) / (safe_l + h), 0.0, 1.0)
 	if vx > 0.0:
-		var safe_r := LevelData.PLAYER_MAX_X + LevelData.PLAYER_HIT_DX
-		return clampf((LevelData.SCREEN_W + h - x) / (LevelData.SCREEN_W + h - safe_r), 0.0, 1.0)
+		var safe_r := LevelData.player_max_x(w) + LevelData.PLAYER_HIT_DX
+		return clampf((w + h - x) / (w + h - safe_r), 0.0, 1.0)
 	return 1.0

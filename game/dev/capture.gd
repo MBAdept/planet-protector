@@ -6,6 +6,8 @@ extends Node
 ##     --path game res://dev/capture.tscn -- --level=7 --ship=0 --difficulty=1 --autoplay --invincible \
 ##     --out=/abs/path/prefix --at=3.0,6.5 [--when=split --delay=0.15] [--seed=3] [--quit-after=20] [--pause-at=4]
 ## --hit-at=T forces a player hit at T seconds.
+## --display=<0|1|2>: display mode (SPEC §18): 0 classic 4:3 (screenshot = window size), 1 / 2 the 16:9 modes with the
+## 1280 px wide playfield (screenshot = 1920×1080 / 2560×1440). Without it the stored mode counts.
 ## --at: capture times in seconds since start. --when: capture once when a condition first holds
 ## (split | explosion | bullets | respawn | clearing | stage | flash | materialize) plus --delay seconds.
 
@@ -41,11 +43,26 @@ func _ready() -> void:
 	_quit_after = float(_args.get("quit-after", 30.0))
 	_pause_at = float(_args.get("pause-at", -1.0))
 	_hit_at = float(_args.get("hit-at", -1.0))
+	_apply_display()
 	Run.start_new(int(_args.get("difficulty", 1)), int(_args.get("ship", 0)), int(_args.get("level", 1)))
 	if _args.has("score"):
 		Run.score = int(_args["score"])
 	Run.dev_flags = {"invincible": _args.has("invincible"), "autoplay": _args.has("autoplay")}
 	_start(Run.level)
+
+
+## --display=<n>: the Display autoload reads the same argument (a forced mode for this run, never stored); it is
+## set here as well so the capture does not depend on that, then canvas and window are applied before the
+## GameScreen is built (it takes its playfield width from Display at setup).
+func _apply_display() -> void:
+	if _args.has("display"):
+		var m := clampi(int(_args["display"]), 0, Display.Mode.size() - 1)
+		if Display.mode() != m:
+			Display.set("forced_mode", m)
+		if Display.mode() != m:
+			push_warning("capture: Display does not support --display=%d here" % m)
+		Display.apply()
+	print("display mode %d (%s): logical %s" % [Display.mode(), Display.MODE_NAMES[Display.mode()], Display.logical_size()])
 
 
 func _start(n: int) -> void:

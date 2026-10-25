@@ -3,9 +3,11 @@ extends RefCounted
 ## Pure run-flow decisions (docs/SPEC.md §11) and command-line parsing (§17.3). No nodes, no state –
 ## `Main` asks "where do we go after <screen> finished with <result>?" and gets a step back:
 ##   {"screen": <name>, "level": <int>}
-## Screen names: title, ship_select, level, interlevel, arrival, bonus_result, mars_rules, victory,
-## game_over, name_entry, highscores, attract, quit.
+## Screen names: display_select, title, ship_select, level, interlevel, arrival, bonus_result, mars_rules,
+## victory, game_over, name_entry, highscores, attract, quit.
 ##
+##   (first start) DISPLAY SELECT ──confirm──▶ TITLE   (Escape quits, like on the title)
+##   TITLE ──DISPLAY applied──▶ TITLE (re-created on the new canvas)
 ##   TITLE ──Start──▶ SHIP SELECT ──confirm──▶ LEVEL 1
 ##   LEVEL n completed:
 ##      n ≠ 13 → INTERLEVEL(n) → n ∈ {3,6,9,12,16}: ARRIVAL(n) → LEVEL n+1
@@ -17,7 +19,7 @@ extends RefCounted
 ##   TITLE idle 90 s ──▶ ATTRACT (demo) ──end / any input──▶ TITLE
 
 const SCREENS: Array[String] = ["title", "ship_select", "interlevel", "arrival", "mars_rules", "bonus_result",
-	"victory", "game_over", "name_entry", "highscores"]
+	"victory", "game_over", "name_entry", "highscores", "display_select"]
 
 
 static func step(screen: String, level: int = 0) -> Dictionary:
@@ -28,6 +30,8 @@ static func step(screen: String, level: int = 0) -> Dictionary:
 ## the level that just ended), `qualifies` = the run's score enters the highscore list.
 static func next(from: String, result: String, level: int, qualifies: bool = false) -> Dictionary:
 	match from:
+		"display_select":
+			return step("quit" if result == "quit" else "title")
 		"title":
 			match result:
 				"start":
@@ -38,7 +42,7 @@ static func next(from: String, result: String, level: int, qualifies: bool = fal
 					return step("quit")
 				"attract":
 					return step("attract")
-			return step("title")
+			return step("title")   # also "display": a new display mode was applied → title on the new canvas
 		"attract":
 			return step("title")   # the demo is over or the player pressed something
 		"ship_select":
@@ -73,6 +77,14 @@ static func next(from: String, result: String, level: int, qualifies: bool = fal
 		"highscores":
 			return step("title")
 	return step("title")
+
+
+## First screen of a normal start (no --screen / --level): the first-start display choice while the player has
+## not confirmed one (or --first-start forces it), else the title. A mode forced with --display skips it.
+static func first_screen(display_chosen: bool, display_forced: bool, force_first_start: bool) -> String:
+	if force_first_start or (not display_chosen and not display_forced):
+		return "display_select"
+	return "title"
 
 
 ## A finished run enters the list only with a positive score that makes the top 10 (SPEC §13).

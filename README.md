@@ -48,14 +48,40 @@ Einstellungen und Highscores liegen in `%APPDATA%\planet_protector`.
 | Aus der Pause zum Titel | Q | Select / Back (Share bzw. Create) |
 | Highscores im Titel | Menüpunkt HIGHSCORES | Select / Back |
 | Zurück aus Untermenüs | Escape | B |
-| Vollbild an/aus | F11 | – |
+| Vollbild an/aus (16:9-Modi: Vollbild ↔ 16:9-Fenster) | F11 | – |
 | Spiel beenden (im Titel) | Escape | – |
 | Name eingeben | Tippen, Backspace löscht | ↑↓ ändert Zeichen, ←→ bewegt Cursor, B löscht |
+
+## Anzeige und Auflösung
+
+Beim ersten Start fragt das Spiel nach dem Anzeigemodus (Pfeiltasten/D-Pad wählen, Enter/A bestätigt, Escape beendet das
+Spiel, ohne etwas zu speichern – dann kommt die Frage beim nächsten Start wieder). Später lässt sich der Modus jederzeit im
+Titelmenü unter **DISPLAY** ändern: ←/→ wählt, Enter/A übernimmt („Press ENTER to apply“); der Wechsel wirkt sofort, ohne
+Neustart.
+
+| Modus | Bild | Spielfeld |
+|---|---|---|
+| **WINDOW 4:3 (CLASSIC)** | Fenster 1280 × 960, frei skalierbar, F11 = Vollbild | das Original (960 × 720) |
+| **FULLSCREEN 1920×1080 (16:9)** | Vollbild, berechnet in genau 1920 × 1080 | breiter: 1280 × 720 |
+| **FULLSCREEN 2560×1440 (16:9)** | Vollbild, berechnet in genau 2560 × 1440 | breiter: 1280 × 720 |
+
+- In den 16:9-Modi ist das Spielfeld wirklich breiter (keine schwarzen Balken): alle Geschwindigkeiten, Abstände und
+  Trefferzonen bleiben gleich, nur die seitlichen Grenzen liegen an den Bildschirmrändern.
+- Das Bild wird immer in der gewählten Auflösung berechnet und dann auf den Monitor skaliert (die Monitorauflösung selbst
+  wird nicht umgestellt). Auf einem Monitor mit anderem Seitenverhältnis erscheinen schmale schwarze Ränder.
+  Welcher 16:9-Modus passt, zeigt das Spiel selbst: Der Startbildschirm nennt die Bildschirmauflösung („Your screen:
+  …“) und markiert die passende Option mit **BEST FIT FOR YOUR SCREEN** (2560×1440 ab einem Monitor mit mindestens
+  2560 × 1440, sonst 1920×1080); im Titelmenü steht unter DISPLAY z. B. „best fit for your 1920×1080 screen“ oder
+  „scaled down to your 1920×1080 screen“.
+- Im Vollbild ist der Mauszeiger ausgeblendet (das Spiel braucht keine Maus), im Fenster ist er sichtbar.
+- F11 schaltet in den 16:9-Modi zwischen Vollbild und einem 16:9-Fenster um (1920 × 1080, 1600 × 900 oder 1280 × 720 –
+  das größte, das auf den Bildschirm passt); beim nächsten Start ist es wieder Vollbild.
+- Die Highscore-Listen gelten für alle Modi gemeinsam. Die Wahl steht in der Einstellungsdatei (`settings.cfg`).
 
 ## Spielablauf
 
 - **Titel**: Schwierigkeit (Beginner, Normal, Hard, Expert), Musik und Soundeffekte an/aus, Lautstärke für Musik und
-  Effekte (0–100 %, auch in der Pause einstellbar), Highscores.
+  Effekte (0–100 %, auch in der Pause einstellbar), Anzeigemodus (DISPLAY, siehe oben), Highscores.
   Nach 90 Sekunden ohne Eingabe startet eine kurze Demo (Attract-Modus); jede Taste führt zurück zum Titel.
 - **Schiffsauswahl**: sechs Schiffe mit unterschiedlichen Waffen (schnelle Laser, mitgeführte Raketen, Doppelschüsse,
   durchschlagende Schüsse). Animierte Vorschau zeigt jede Waffe in Aktion.

@@ -1,9 +1,12 @@
 class_name LevelData
 extends RefCounted
 ## Static rule tables (docs/SPEC.md §1, §5–§10). Pure data + small helpers, no state.
+## Widescreen (SPEC §18.1): the constants below describe the classic 960 px wide playfield; a wider one (16:9,
+## 1280 px) only moves the RIGHT-hand limits with the screen edge – see player_max_x(), player_start_x(),
+## enemy_max_x(). Everything else (speeds, distances, hit boxes, salvo widths, timings, lane y) stays in px.
 
 # --- Geometry / timing constants -----------------------------------------------------------------
-const SCREEN_W := 960.0
+const SCREEN_W := 960.0            # classic 4:3 playfield width (GameWorld.width may be wider, SPEC §18.1)
 const SCREEN_H := 720.0
 const GROUND_Y := 685.0
 const PLAYER_Y := 659.0
@@ -195,6 +198,22 @@ const FIRE := [
 
 
 # --- Helpers -------------------------------------------------------------------------------------
+## Playfield-width aware limits (SPEC §18.1): the right-hand limits keep the classic margins to the right screen
+## edge (player 30 px, enemy centre 50 px), the left ones stay PLAYER_MIN_X / ENEMY_MIN_X. For w = SCREEN_W they
+## are exactly the classic constants (930 / 480 / 910).
+static func player_max_x(w: float = SCREEN_W) -> float:
+	return w - (SCREEN_W - PLAYER_MAX_X)
+
+
+## Start / respawn x of the ship: the centre of the playfield.
+static func player_start_x(w: float = SCREEN_W) -> float:
+	return w * 0.5
+
+
+static func enemy_max_x(w: float = SCREEN_W) -> float:
+	return w - (SCREEN_W - ENEMY_MAX_X)
+
+
 static func level(n: int) -> Dictionary:
 	return LEVELS[clampi(n, FIRST_LEVEL, LAST_LEVEL)]
 

@@ -4,6 +4,9 @@ extends Node
 ## load unchanged; longer names in a hand-edited file are cut to NAME_MAX on load (sanitize_name).
 ## Volumes (SPEC §14): MUSIC VOLUME / EFFECTS VOLUME in percent, 0–100 in VOLUME_STEP steps, default 100 (the
 ## original mix). They scale the Music / SFX bus (AudioManager.volume_db); the ON/OFF options still mute on top.
+## Display (client request, widescreen round): display_mode 0/1/2 = Display.Mode (0 = the classic 4:3 window,
+## default) and display_chosen (false until the player confirmed a mode on the first-start screen). Files written
+## before these keys existed read as mode 0, not chosen – so that screen appears once.
 
 signal changed
 
@@ -25,6 +28,8 @@ var sfx_on := true
 var fullscreen := false
 var music_volume := DEFAULT_VOLUME   ## percent, multiple of VOLUME_STEP
 var sfx_volume := DEFAULT_VOLUME     ## percent, multiple of VOLUME_STEP
+var display_mode := 0               ## Display.Mode: 0 classic 4:3 window, 1 / 2 fullscreen 16:9 (1080 / 1440)
+var display_chosen := false         ## the player confirmed a mode on the first-start screen
 ## File of the options (tests point it to a scratch file so the player's settings stay untouched).
 var settings_path := SETTINGS_PATH
 ## File of the highscore lists (same: tests use a scratch file).
@@ -51,6 +56,9 @@ func load_settings() -> void:
 	music_volume = clean_volume(cfg.get_value("audio", "music_volume", DEFAULT_VOLUME))
 	sfx_volume = clean_volume(cfg.get_value("audio", "sfx_volume", DEFAULT_VOLUME))
 	fullscreen = bool(cfg.get_value("video", "fullscreen", fullscreen))
+	display_mode = clean_display_mode(cfg.get_value("video", "display_mode", 0))
+	var chosen: Variant = cfg.get_value("video", "display_chosen", false)
+	display_chosen = chosen is bool and chosen
 
 
 func save_settings() -> void:
@@ -61,6 +69,8 @@ func save_settings() -> void:
 	cfg.set_value("audio", "music_volume", music_volume)
 	cfg.set_value("audio", "sfx_volume", sfx_volume)
 	cfg.set_value("video", "fullscreen", fullscreen)
+	cfg.set_value("video", "display_mode", display_mode)
+	cfg.set_value("video", "display_chosen", display_chosen)
 	cfg.save(settings_path)
 
 
@@ -86,6 +96,33 @@ func set_fullscreen(value: bool) -> void:
 	fullscreen = value
 	save_settings()
 	changed.emit()
+
+
+## Stores the display mode (Display.Mode, clamped to 0–2). Display.choose() applies it.
+func set_display_mode(value: int) -> void:
+	display_mode = clean_display_mode(value)
+	save_settings()
+	changed.emit()
+
+
+## Marks the first-start display choice as done (the first-start screen does not appear again).
+func set_display_chosen(value: bool) -> void:
+	display_chosen = value
+	save_settings()
+	changed.emit()
+
+
+## A display mode as stored: an integer 0–2 (a whole-number float like 1.0 counts as that integer); anything else
+## – another type, a fraction like 1.5, NaN, out of range – is a damaged file and falls back to 0 (classic), so a
+## broken settings.cfg never starts the game fullscreen.
+static func clean_display_mode(value: Variant) -> int:
+	if value is float:
+		if is_nan(value) or value != floorf(value):
+			return 0
+		value = int(value)
+	if not (value is int):
+		return 0
+	return value if value >= 0 and value <= 2 else 0
 
 
 ## Sets MUSIC VOLUME (clamped to 0–100, snapped to VOLUME_STEP). Saves and emits `changed` only if the value

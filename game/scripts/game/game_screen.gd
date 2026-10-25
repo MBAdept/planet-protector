@@ -10,6 +10,8 @@ extends Node2D
 ## VOLUME, left/right changes it (persisted, applied at once). A direction held when the pause opens does not
 ## step a volume, and a movement held when it closes is ignored until released (no volume steps or ship moves
 ## leak through). Fire is not guarded: a fire button held through the pause fires again at once (hold-to-fire).
+## Playfield width (SPEC §18.1): the screen takes Display.logical_width() (960 in the classic 4:3 mode, 1280 in the
+## 16:9 modes) at setup, gives it to the world (demo world included) and draws everything over that width.
 
 signal finished(result: String, data: Dictionary)
 
@@ -34,6 +36,8 @@ const GAME_OVER_DELAY := 0.6
 const PAUSE_ITEMS: Array[String] = ["music_volume", "sfx_volume"]
 
 var level := 1
+## Playfield width (960 / 1280): the display mode's logical width, fixed for this screen.
+var width := LevelData.SCREEN_W
 var world: GameWorld
 var paused := false
 ## Selected row of the pause overlay (index into PAUSE_ITEMS); kept between pauses.
@@ -72,6 +76,7 @@ var _hud: Node2D
 
 
 func setup(args: Dictionary) -> void:
+	width = Display.logical_width()
 	if args.has("attract"):
 		var a: Dictionary = args["attract"]
 		attract = true
@@ -84,10 +89,10 @@ func setup(args: Dictionary) -> void:
 func _ready() -> void:
 	if attract:
 		# A demo has its own world (NORMAL, one life) and leaves Run and the audio alone.
-		world = director.make_world()
+		world = director.make_world(width)
 		_build()
 		return
-	world = GameWorld.new(level, Run.difficulty, Run.ship_id, Run.lives, randi())
+	world = GameWorld.new(level, Run.difficulty, Run.ship_id, Run.lives, randi(), width)
 	world.invincible = Run.dev("invincible")
 	_base_score = Run.score
 	_base_time = Run.active_time
@@ -101,22 +106,22 @@ func _ready() -> void:
 
 func _build() -> void:
 	var sky := Backdrop.new()
-	sky.setup(Backdrop.Mode.SKY, level)
+	sky.setup(Backdrop.Mode.SKY, level, width)
 	add_child(sky)
-	_stars = Starfield.new()
+	_stars = Starfield.new()   # covers Display.logical_size(), i.e. this width
 	_stars.velocity = Vector2(0, 6)
 	add_child(_stars)
 	var planet := Backdrop.new()
-	planet.setup(Backdrop.Mode.PLANET, level)
+	planet.setup(Backdrop.Mode.PLANET, level, width)
 	add_child(planet)
 	var vignette := Backdrop.new()
-	vignette.setup(Backdrop.Mode.VIGNETTE, level)
+	vignette.setup(Backdrop.Mode.VIGNETTE, level, width)
 	add_child(vignette)
 
 	_root = Node2D.new()
 	add_child(_root)
 	var ground := Backdrop.new()
-	ground.setup(Backdrop.Mode.GROUND, level)
+	ground.setup(Backdrop.Mode.GROUND, level, width)
 	_root.add_child(ground)
 	_enemy_layer = Node2D.new()
 	_root.add_child(_enemy_layer)
@@ -138,7 +143,7 @@ func _build() -> void:
 	clip.clip_contents = true
 	clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	clip.position = Vector2.ZERO
-	clip.size = Vector2(LevelData.SCREEN_W, LevelData.GROUND_Y)
+	clip.size = Vector2(width, LevelData.GROUND_Y)
 	_root.add_child(clip)
 	_bullets = ProjectilesView.new()
 	_bullets.mode = ProjectilesView.Mode.BULLETS
@@ -148,6 +153,7 @@ func _build() -> void:
 	_hud = Hud.new()
 	_hud.world = world
 	_hud.level = level
+	_hud.width = width
 	_hud.attract = attract
 	add_child(_hud)
 
@@ -380,7 +386,7 @@ func _handle_events() -> void:
 			"extra_life":
 				_sfx("extra_life")
 				var p := Vector2(world.player_x, LevelData.PLAYER_Y - 40.0)
-				_fx.impulse("extra_life", Vector2(480, 330), 1.0)
+				_fx.impulse("extra_life", Vector2(width * 0.5, 330), 1.0)
 				_fx.popup("+1 LIFE", p, Color(0.55, 1.0, 0.6), 20, 1.6)
 			"clearing":
 				_clear_time = 0.0

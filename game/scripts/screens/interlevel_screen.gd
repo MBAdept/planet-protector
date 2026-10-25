@@ -5,7 +5,7 @@ extends ScreenBase
 ## setup args: {"level": n} (defaults to Run.last_level_result.level / Run.level).
 
 const CONFIRM_DELAY := 0.6
-const PLANET_POS := Vector2(890, 700)
+const PLANET_POS := Vector2(890, 700)   ## lower right corner (16:9: + ox, the same distance from the edge)
 const PLANET_D := 440.0
 const PANEL_TOP := 232.0
 const PANEL_W := 460.0
@@ -54,9 +54,9 @@ func _draw() -> void:
 	# The planet of the finished battle, big and dim in the lower right corner - far enough out that its
 	# limb stays clear of the progress line even with the extra-life row (levels 15-18).
 	var pa := 0.55 * ramp(0.0, 0.8)
-	Assets.draw_planet(self, planet, PLANET_POS + Vector2(0, 14) * (1.0 - ramp(0.0, 1.2)), PLANET_D,
+	Assets.draw_planet(self, planet, PLANET_POS + Vector2(ox, 14.0 * (1.0 - ramp(0.0, 1.2))), PLANET_D,
 		Color(1, 1, 1, pa))
-	draw_rect(Rect2(0, 0, W, H), Color(0, 0, 0, 0.18))
+	draw_rect(full_rect(), Color(0, 0, 0, 0.18))
 	var a := ramp(0.0, 0.35)
 	draw_title("LEVEL %d COMPLETE" % _n, 150, 42, Color(UiKit.COLOR_TEXT, a))
 	UiKit.text_spaced(self, Assets.font_title, Vector2(CX, 190), String(LevelData.level(_n)["name"]).to_upper(), 17,

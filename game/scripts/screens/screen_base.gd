@@ -5,9 +5,16 @@ extends Node2D
 ## Provides a Starfield background (drawn behind everything), a running clock and small helpers.
 ## Subclasses override `_enter()` (called from _ready) and `_tick(delta)` (per frame, until finished)
 ## and draw in `_draw()` as usual; the screen redraws every frame.
+## Display modes (Display, SPEC §1): every screen is laid out on the classic 960 × 720 canvas (W, H, CX are its
+## content coordinates). On the 16:9 canvas (1280 × 720) the screen node is moved right by `ox`
+## (Display.center_offset() = 160), so that layout is centred; full-width elements (starfield, darkening
+## overlays, planets anchored to a side, corner captions) use left_x() / right_x() / full_rect(), the canvas edges
+## in content coordinates (−160 … 1120 in 16:9, 0 … 960 in 4:3). The mode never changes while a screen is shown
+## (Main re-creates the title after a display change).
 
 signal finished(result: String, data: Dictionary)
 
+## Classic layout canvas (content coordinates). The real canvas is `sw` wide, see ox.
 const W := 960.0
 const H := 720.0
 const CX := 480.0
@@ -21,6 +28,10 @@ var args: Dictionary = {}
 ## Seconds since the screen entered the tree (real time).
 var time := 0.0
 var starfield: Starfield
+## Width of the logical canvas (Display.logical_width(): 960 or 1280) when the screen was created.
+var sw := W
+## Offset of the 960-wide content layout on the canvas (0 in 4:3, 160 in 16:9); also the node's position.x.
+var ox := 0.0
 var _done := false
 
 
@@ -29,9 +40,14 @@ func setup(p_args: Dictionary) -> void:
 
 
 func _ready() -> void:
+	sw = Display.logical_width()
+	ox = Display.center_offset()
+	position.x = ox
 	starfield = Starfield.new()
 	starfield.z_index = -10
 	starfield.velocity = _star_velocity()
+	starfield.size = Vector2(sw, H)
+	starfield.position.x = -ox      # the sky spans the whole canvas
 	add_child(starfield)
 	_enter()
 	modulate = Color(1, 1, 1, 0) if _use_fade() else Color.WHITE
@@ -76,6 +92,20 @@ func _use_fade() -> bool:
 
 
 # --- Helpers -------------------------------------------------------------------------------------
+## Left / right edge of the canvas in content coordinates (−ox / W + ox).
+func left_x() -> float:
+	return -ox
+
+
+func right_x() -> float:
+	return W + ox
+
+
+## The whole canvas in content coordinates.
+func full_rect() -> Rect2:
+	return Rect2(-ox, 0.0, sw, H)
+
+
 func sfx(sfx_name: String) -> void:
 	AudioManager.play_sfx(sfx_name)
 

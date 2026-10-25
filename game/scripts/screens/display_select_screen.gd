@@ -1,0 +1,183 @@
+extends ScreenBase
+## First-start display choice (client request, widescreen round; docs/SPEC.md §11): shown before the title while
+## Settings.display_chosen is false (old settings files included, so it appears once), or with --first-start.
+## Three options with the exact Display.MODE_NAMES and a one-line explanation each (Display.MODE_INFO).
+## Up/down (also left/right; keys, D-pad, stick – controlled repeat, wrapping) selects; Enter / Space / A / X / Y /
+## Start confirms: Display.choose() applies and stores the mode, display_chosen is set → finished("confirm") and
+## Main opens the title on the new canvas. Escape quits the game like on the title (nothing is stored, so the
+## choice is offered again next time); controller B is ignored like on the title. The choice can be changed later
+## in the title menu (DISPLAY). Release guard: Main calls InputRouter.require_release() when the screen opens.
+## Monitor hint (Godot cannot change the monitor's resolution, the 16:9 modes are scaled to it): the line "Your
+## screen: W×H" under the cards (plus a note about black bars on a monitor that is not 16:9) and a BEST FIT badge on
+## the 16:9 card that suits it (Display.best_wide_mode). Only a hint: the classic window stays preselected.
+## Nothing of it is shown when the monitor size is unknown.
+## setup args: {"select": <mode>} (optional initial selection; default: the current mode).
+
+const HEADING := "CHOOSE YOUR DISPLAY"
+const FOOTNOTE := "You can change this any time in the title menu (DISPLAY)."
+const LOGO_W := 430.0
+const LOGO_Y := 92.0
+const HEADING_Y := 206.0
+const CARD_W := 660.0
+const CARD_H := 96.0
+const CARD_GAP := 14.0
+const CARD_Y := 236.0           ## top of the first card
+const ICON_X := 34.0            ## icon centre, from the card's left edge
+const TEXT_X := 128.0           ## name / explanation start, from the card's left edge
+const NAME_SIZE := 21
+const INFO_SIZE := 16
+const SCREEN_Y := 591.0         ## "Your screen: W×H" (monitor hint)
+const FOOTNOTE_Y := 618.0
+const HINT_Y := 668.0
+const BADGE := "BEST FIT FOR YOUR SCREEN"
+const BADGE_SIZE := 11
+const BADGE_H := 20.0
+
+var _sel := 0
+var _screen := Vector2i.ZERO   ## monitor size (Display.screen_size(); ZERO = unknown)
+var _best := -1                ## Display.best_wide_mode(_screen): the card with the badge (-1 = none)
+
+
+func _enter() -> void:
+	AudioManager.play_title_music()
+	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS   # logo.png is imported with mipmaps
+	_sel = clampi(int(args.get("select", Display.mode())), 0, Display.MODE_COUNT - 1)
+	_screen = Display.screen_size()
+	_best = Display.best_wide_mode(_screen)
+
+
+func _star_velocity() -> Vector2:
+	return Vector2(-10, 2)
+
+
+## Currently highlighted mode (Display.Mode).
+func selected() -> int:
+	return _sel
+
+
+## Mode whose card carries the BEST FIT badge (-1: monitor unknown, no badge).
+func best_mode() -> int:
+	return _best
+
+
+## Monitor line under the cards: "Your screen: W×H", with a note on a monitor that is not 16:9; "" if unknown.
+static func screen_line(screen: Vector2i) -> String:
+	if Display.best_wide_mode(screen) < 0:
+		return ""
+	var s := "Your screen: %s" % Display.size_text(screen)
+	if Display.letterboxed_on(screen):
+		s += "  ·  not 16:9, so the 16:9 modes get black bars"
+	return s
+
+
+## Badge of the best-fitting 16:9 card: on the card's top border, right-aligned.
+static func badge_rect(card: Rect2) -> Rect2:
+	var w := UiKit.text_width(Assets.font_body_bold, BADGE, BADGE_SIZE) + 22.0
+	return Rect2(card.end.x - 24.0 - w, card.position.y - BADGE_H * 0.5, w, BADGE_H)
+
+
+func _tick(_delta: float) -> void:
+	var d := InputRouter.menu_direction()
+	var step := d.y if d.y != 0 else d.x
+	if step != 0:
+		_sel = posmod(_sel + step, Display.MODE_COUNT)
+		sfx("menu_move")
+	if InputRouter.confirm_pressed(true):
+		_confirm()
+	elif InputRouter.just_pressed(InputRouter.B.ESCAPE):
+		sfx("menu_back")
+		finish("quit")
+
+
+func _confirm() -> void:
+	sfx("menu_confirm")
+	Display.choose(_sel)
+	Settings.set_display_chosen(true)
+	finish("confirm", {"mode": _sel})
+
+
+## Card of option i (content coordinates, centred on the canvas).
+static func card_rect(i: int) -> Rect2:
+	return Rect2(CX - CARD_W * 0.5, CARD_Y + i * (CARD_H + CARD_GAP), CARD_W, CARD_H)
+
+
+# --- Drawing -------------------------------------------------------------------------------------
+func _draw() -> void:
+	_draw_logo()
+	draw_title(HEADING, HEADING_Y, 26)
+	for i in Display.MODE_COUNT:
+		_draw_card(i)
+	var line := screen_line(_screen)
+	if line != "":
+		UiKit.text(self, Assets.font_body, Vector2(CX, SCREEN_Y), line, 15, Color(UiKit.COLOR_TEXT, 0.82 * ramp(0.3, 0.4)),
+			HORIZONTAL_ALIGNMENT_CENTER)
+	UiKit.text(self, Assets.font_body, Vector2(CX, FOOTNOTE_Y), FOOTNOTE, 15, UiKit.COLOR_DIM,
+		HORIZONTAL_ALIGNMENT_CENTER)
+	UiKit.hint_bar(self, Vector2(CX, HINT_Y), [
+		[["UD"], "Select"], [["ENTER", "pad:A"], "Confirm"], [["ESC"], "Quit"],
+	], 14)
+
+
+func _draw_logo() -> void:
+	var logo := Assets.logo_texture()
+	var c := Vector2(CX, LOGO_Y + sin(time * 0.9) * 2.0)
+	UiKit.glow_spot(self, c + Vector2(0, 6), Vector2(280, 84), Color(1.0, 0.35, 0.08, 0.11))
+	if logo:
+		var h := LOGO_W * float(logo.get_height()) / float(logo.get_width())
+		draw_texture_rect(logo, Rect2(c - Vector2(LOGO_W, h) * 0.5, Vector2(LOGO_W, h)), false)
+	else:
+		UiKit.text_glow(self, Assets.font_title_heavy, Vector2(CX, c.y + 16), "PLANET PROTECTOR", 44,
+			Color(1.0, 0.78, 0.38), Color(1.0, 0.3, 0.05), HORIZONTAL_ALIGNMENT_CENTER)
+
+
+func _draw_card(i: int) -> void:
+	var r := card_rect(i)
+	var selected := i == _sel
+	var a := ramp(0.08 + i * 0.07, 0.3)
+	if selected:
+		var pulse := 0.5 + 0.5 * sin(time * 4.0)
+		UiKit.panel_ex(self, r, Color(UiKit.COLOR_HILITE, (0.10 + 0.05 * pulse) * a),
+			Color(UiKit.COLOR_HILITE, (0.6 + 0.3 * pulse) * a), 14, 2, Color(UiKit.COLOR_HILITE, 0.22 * a), 14)
+		UiKit.triangle(self, Vector2(r.position.x - 18, r.get_center().y), Vector2.RIGHT, 13, Color(UiKit.COLOR_HILITE, a))
+		UiKit.triangle(self, Vector2(r.end.x + 18, r.get_center().y), Vector2.LEFT, 13, Color(UiKit.COLOR_HILITE, a))
+	else:
+		UiKit.panel_ex(self, r, Color(UiKit.COLOR_PANEL, 0.62 * a), Color(UiKit.COLOR_BORDER, 0.22 * a), 14, 1)
+	var col := UiKit.COLOR_TEXT if selected else UiKit.COLOR_DIM
+	# Icon (plus its 1080p / 1440p caption in 16:9) vertically centred in the card.
+	var icon_c := Vector2(r.position.x + TEXT_X * 0.5 + 4.0, r.get_center().y - (7.0 if Display.is_wide_mode(i) else 0.0))
+	_draw_mode_icon(icon_c, i, Color(UiKit.COLOR_ACCENT if selected else UiKit.COLOR_DIM, a))
+	UiKit.text(self, Assets.font_title, Vector2(r.position.x + TEXT_X, r.position.y + 42), Display.mode_name(i),
+		NAME_SIZE, Color(col, a))
+	UiKit.text(self, Assets.font_body, Vector2(r.position.x + TEXT_X, r.position.y + 72), String(Display.MODE_INFO[i]),
+		INFO_SIZE, Color(UiKit.COLOR_DIM.lerp(UiKit.COLOR_TEXT, 0.3 if selected else 0.0), a))
+	if i == _best:
+		_draw_badge(r, a)
+
+
+func _draw_badge(card: Rect2, a: float) -> void:
+	var br := badge_rect(card)
+	UiKit.panel_ex(self, br, Color(0.09, 0.06, 0.015, 0.96 * a), Color(UiKit.COLOR_GOLD, 0.8 * a), 10, 1)
+	var font := Assets.font_body_bold
+	UiKit.text(self, font, Vector2(br.get_center().x, UiKit.baseline_for(font, BADGE_SIZE, br.get_center().y)), BADGE,
+		BADGE_SIZE, Color(UiKit.COLOR_GOLD, a), HORIZONTAL_ALIGNMENT_CENTER)
+
+
+## Small screen icon in the proportions of the mode's playfield (4:3 or the wider 16:9) with ground, ship and
+## three enemy dots; 16:9 icons carry their render height (1080 / 1440).
+func _draw_mode_icon(c: Vector2, m: int, col: Color) -> void:
+	var lsz := Vector2(Display.logical_size_of(m))
+	var h := 44.0
+	var w := h * lsz.x / lsz.y
+	var r := Rect2(c - Vector2(w, h) * 0.5, Vector2(w, h))
+	UiKit.panel_ex(self, r, Color(0.0, 0.02, 0.06, 0.8 * col.a), col, 5, 2)
+	var gy := r.position.y + h * 0.82
+	draw_line(Vector2(r.position.x + 3, gy), Vector2(r.end.x - 3, gy), Color(col, col.a * 0.6), 1.5)
+	UiKit.triangle(self, Vector2(c.x, gy - 4.0), Vector2.UP, 7.0, col)
+	for k in 3:
+		var ex := r.position.x + w * (0.25 + 0.25 * k)
+		var ey := r.position.y + h * (0.25 + 0.15 * k)
+		draw_circle(Vector2(ex, ey), 2.2, Color(col, col.a * 0.85), true, -1.0, true)
+	if Display.is_wide_mode(m):
+		var label := "%dp" % int(Display.RENDER_SIZE[m].y)
+		UiKit.text(self, Assets.font_body_bold, Vector2(c.x, r.end.y + 15.0), label, 11, Color(col, col.a * 0.9),
+			HORIZONTAL_ALIGNMENT_CENTER)

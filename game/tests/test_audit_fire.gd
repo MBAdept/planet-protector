@@ -136,4 +136,7 @@ func test_audit_fire_sideways_exit_fades_right_edge() -> void:
 	_check_side_exit(900.0, Vector2(LevelData.ENEMY_BULLET_DIAG_A, LevelData.ENEMY_BULLET_DIAG_B), "right 5 o'clock")
 	check_near(ProjectilesView.side_fade(480.0, 0.0), 1.0, 0.0, "straight-down bullets never fade sideways")
 	var src := (ProjectilesView as GDScript).source_code
-	check(src.contains("alpha *= side_fade(b.x, b.vx)"), "ProjectilesView._draw applies the side fade to every fireball")
+	# Every fireball is drawn with fireball_alpha(b), which applies the side fade with the width of the world being
+	# drawn (world.width, SPEC §18.1) – behaviour with both widths: test_wide_playfield.gd.
+	check(src.contains("b.age, 1.0, fireball_alpha(b))"), "ProjectilesView._draw draws every fireball with fireball_alpha")
+	check(src.contains("alpha *= side_fade(b.x, b.vx, world.width)"), "fireball_alpha applies the side fade with the world's width")

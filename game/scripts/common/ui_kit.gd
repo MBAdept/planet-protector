@@ -267,9 +267,10 @@ static func lock_icon(ci: CanvasItem, center: Vector2, size: float, color: Color
 
 # --- Menu items ----------------------------------------------------------------------------------
 ## One menu row centred at `center` (y = vertical centre). value != "" renders "LABEL   < VALUE >".
-## `t` is a running time for the subtle pulse of the selection bar.
+## `t` is a running time for the subtle pulse of the selection bar. value_color (alpha > 0) replaces the accent
+## colour of the value (e.g. a pending, not yet applied choice).
 static func menu_item(ci: CanvasItem, center: Vector2, label: String, value: String, selected: bool,
-		t: float = 0.0, width: float = 440.0, size: int = 22) -> void:
+		t: float = 0.0, width: float = 440.0, size: int = 22, value_color: Color = Color(0, 0, 0, 0)) -> void:
 	var rect := menu_row_rect(center, width, size)
 	var font := Assets.font_title
 	if selected:
@@ -282,6 +283,8 @@ static func menu_item(ci: CanvasItem, center: Vector2, label: String, value: Str
 	var pad := 30.0
 	text(ci, font, Vector2(rect.position.x + pad, by), label, size, col)
 	var vcol := COLOR_ACCENT if selected else Color(COLOR_ACCENT, 0.75)
+	if value_color.a > 0.0:
+		vcol = value_color
 	var vx := rect.end.x - pad
 	if selected:
 		triangle(ci, Vector2(vx - 4, center.y), Vector2.RIGHT, 10, vcol)

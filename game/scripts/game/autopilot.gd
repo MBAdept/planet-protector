@@ -3,8 +3,12 @@ extends RefCounted
 ## the target for unguided shots), keeps firing and sidesteps incoming fireballs. Reads the world only.
 ## The attract mode (AttractDirector, SPEC §11.1) drives it through demo(): a careful player that never lets a
 ## fireball touch the ship, shoots only when a salvo is predicted to hit, and finally seeks a fireball.
+## Playfield width (SPEC §18.1): every limit comes from the world (w.width), so it plays 960 and 1280 alike; the
+## candidate grids keep their density (more candidates on the wider field, exactly the classic ones at 960).
 
+## Candidate positions of decide() over the classic ship range [30, 930] (scaled with the range, _grid_size()).
 const CANDIDATES := 48
+const CLASSIC_RANGE := LevelData.PLAYER_MAX_X - LevelData.PLAYER_MIN_X
 const DANGER_DX := 34.0
 
 # --- Attract mode (demo()) -----------------------------------------------------------------------
@@ -25,6 +29,17 @@ const DEMO_CLEAR_X := 34.0
 const DEMO_HIT_MARGIN := 3.0
 ## The demo's salvo prediction relies on this part of the hit box (|dx| < 49 · scale).
 const DEMO_AIM_DX := 0.75
+
+
+## Ship x range of the world: [PLAYER_MIN_X, player_max_x(width)].
+static func _ship_max(w: GameWorld) -> float:
+	return LevelData.player_max_x(w.width)
+
+
+## Number of grid candidates over the ship's range: `classic` over the classic range, the same density on a wider
+## playfield (exactly `classic` at width 960).
+static func _grid_size(w: GameWorld, classic: int) -> int:
+	return maxi(classic, roundi(float(classic - 1) * (_ship_max(w) - LevelData.PLAYER_MIN_X) / CLASSIC_RANGE) + 1)
 
 
 ## Returns Vector2(move_axis, fire) with fire = 1.0 when the button should be held.
@@ -56,7 +71,7 @@ static func decide(w: GameWorld) -> Vector2:
 		if guided and not w.shots.is_empty():
 			target_x -= w.shots[0].offset
 	else:
-		target_x = LevelData.PLAYER_START_X
+		target_x = LevelData.player_start_x(w.width)
 	# Landing points of incoming fireballs (computed once). A slanted fireball sweeps sideways while it
 	# crosses the ship's hit band (|dy| < 15), so its danger zone is wider.
 	var threats := PackedVector3Array()   # (x at the player line, time until it gets there, danger half-width)
@@ -71,8 +86,9 @@ static func decide(w: GameWorld) -> Vector2:
 	# Pick the reachable position with the best trade-off between aiming and danger.
 	var best := px
 	var best_cost := INF
-	for i in CANDIDATES:
-		var cand := lerpf(LevelData.PLAYER_MIN_X, LevelData.PLAYER_MAX_X, float(i) / float(CANDIDATES - 1))
+	var n := _grid_size(w, CANDIDATES)
+	for i in n:
+		var cand := lerpf(LevelData.PLAYER_MIN_X, _ship_max(w), float(i) / float(n - 1))
 		var cost := absf(cand - target_x) / 260.0 + _risk(threats, px, cand) * 5.0
 		if cost < best_cost:
 			best_cost = cost
@@ -107,7 +123,7 @@ static func demo(w: GameWorld, allow_fire: bool, seek_hit: bool) -> Vector2:
 	var steering := guided and not w.shots.is_empty()
 	# Aim: the countable figure whose hit comes soonest. Unguided (or a new guided salvo): stand where a salvo
 	# fired now meets it; a guided salvo in flight: steer it onto a figure still above it.
-	var target_x := LevelData.PLAYER_START_X
+	var target_x := LevelData.player_start_x(w.width)
 	var best_t := INF
 	var reach := false
 	for e in w.enemies:
@@ -133,7 +149,7 @@ static func demo(w: GameWorld, allow_fire: bool, seek_hit: bool) -> Vector2:
 		fire = reach if guided else _salvo_hits(w, px, sh, stage)
 	if seek_hit:
 		return Vector2(_seek_axis(w), 1.0 if fire else 0.0)
-	var aim := clampf(target_x, LevelData.PLAYER_MIN_X, LevelData.PLAYER_MAX_X)
+	var aim := clampf(target_x, LevelData.PLAYER_MIN_X, _ship_max(w))
 	# Dodge: stay inside the escape set – the positions from which the ship can still avoid every fireball in the
 	# air (_escape_set) – heading for the aim point. AttractDirector withdraws any salvo that would leave the
 	# invincible ship no escape, so the ship is always inside.
@@ -145,8 +161,9 @@ static func demo(w: GameWorld, allow_fire: bool, seek_hit: bool) -> Vector2:
 	# candidates are tried in the order of their distance to the aim point (the aim point, then the grid outwards
 	# from it), so the search stops as soon as the distance alone costs more than the best position found.
 	var threats := _threats(w, DEMO_HORIZON)
-	var grid := (LevelData.PLAYER_MAX_X - LevelData.PLAYER_MIN_X) / float(DEMO_CANDIDATES - 1)
-	var lo := clampi(floori((aim - LevelData.PLAYER_MIN_X) / grid), 0, DEMO_CANDIDATES - 1)
+	var n := _grid_size(w, DEMO_CANDIDATES)
+	var grid := (_ship_max(w) - LevelData.PLAYER_MIN_X) / float(n - 1)
+	var lo := clampi(floori((aim - LevelData.PLAYER_MIN_X) / grid), 0, n - 1)
 	var hi := lo + 1
 	var cand := aim
 	var best := aim
@@ -159,11 +176,11 @@ static func demo(w: GameWorld, allow_fire: bool, seek_hit: bool) -> Vector2:
 		if cost < best_cost:
 			best_cost = cost
 			best = cand
-		if lo < 0 and hi >= DEMO_CANDIDATES:
+		if lo < 0 and hi >= n:
 			break
 		var x_lo := LevelData.PLAYER_MIN_X + grid * lo
 		var x_hi := LevelData.PLAYER_MIN_X + grid * hi
-		if hi >= DEMO_CANDIDATES or (lo >= 0 and aim - x_lo <= x_hi - aim):
+		if hi >= n or (lo >= 0 and aim - x_lo <= x_hi - aim):
 			cand = x_lo
 			lo -= 1
 		else:
@@ -238,13 +255,14 @@ static func _escape_set(w: GameWorld) -> PackedFloat64Array:
 			var db := vx * minf(t1, (k + 1) * dt)
 			blocked[k].append(rows[r] + minf(da, db) - DEMO_ESCAPE_DX)
 			blocked[k].append(rows[r + 1] + maxf(da, db) + DEMO_ESCAPE_DX)
-	var s := PackedFloat64Array([LevelData.PLAYER_MIN_X, LevelData.PLAYER_MAX_X])
+	var x_max := _ship_max(w)
+	var s := PackedFloat64Array([LevelData.PLAYER_MIN_X, x_max])
 	for k in range(steps - 1, -1, -1):
 		if not blocked[k].is_empty():
 			s = _subtract(s, blocked[k])
 		if k == 0 or s.is_empty():
 			break
-		s = _dilate(s, LevelData.PLAYER_SPEED * dt)
+		s = _dilate(s, LevelData.PLAYER_SPEED * dt, x_max)
 		if not blocked[k].is_empty():
 			s = _subtract(s, blocked[k])
 	return s
@@ -276,12 +294,13 @@ static func _subtract(s: PackedFloat64Array, cut: PackedFloat64Array) -> PackedF
 	return cur
 
 
-## Interval list `s` (sorted) widened by `d` on both sides, clipped to the ship's range, overlaps merged.
-static func _dilate(s: PackedFloat64Array, d: float) -> PackedFloat64Array:
+## Interval list `s` (sorted) widened by `d` on both sides, clipped to the ship's range [PLAYER_MIN_X, x_max],
+## overlaps merged.
+static func _dilate(s: PackedFloat64Array, d: float, x_max: float) -> PackedFloat64Array:
 	var out := PackedFloat64Array()
 	for i in range(0, s.size(), 2):
 		var a := maxf(s[i] - d, LevelData.PLAYER_MIN_X)
-		var b := minf(s[i + 1] + d, LevelData.PLAYER_MAX_X)
+		var b := minf(s[i + 1] + d, x_max)
 		if not out.is_empty() and a <= out[out.size() - 1]:
 			out[out.size() - 1] = maxf(out[out.size() - 1], b)
 		else:
@@ -307,8 +326,8 @@ static func _future_x(w: GameWorld, e: GameWorld.Enemy, t: float) -> float:
 	var dir := e.dir
 	var left := t
 	var turn := e.dir_timer
-	var lo := GameWorld.min_x(e.scale)
-	var hi := GameWorld.max_x(e.scale)
+	var lo := GameWorld.min_x(e.scale, w.width)
+	var hi := GameWorld.max_x(e.scale, w.width)
 	var v := maxf(w.enemy_speed, 1e-6)
 	for i in 8:
 		var wall := absf((hi if dir > 0.0 else lo) - x) / v
@@ -442,7 +461,7 @@ static func _seek_axis(w: GameWorld) -> float:
 		if t < -LevelData.PLAYER_HIT_DY / b.vy:
 			continue   # already below the ship
 		var x := b.x + b.vx * maxf(t, 0.0)
-		if x < LevelData.PLAYER_MIN_X - LevelData.PLAYER_HIT_DX or x > LevelData.PLAYER_MAX_X + LevelData.PLAYER_HIT_DX:
+		if x < LevelData.PLAYER_MIN_X - LevelData.PLAYER_HIT_DX or x > _ship_max(w) + LevelData.PLAYER_HIT_DX:
 			continue   # lands where the ship cannot be
 		var reach := maxf(absf(x - px) - LevelData.PLAYER_HIT_DX * 0.5, 0.0) / LevelData.PLAYER_SPEED
 		var cost := maxf(t, 0.0) if reach <= maxf(t, 0.0) else 100.0 + absf(x - px)
@@ -463,8 +482,8 @@ static func _predict_x(w: GameWorld, e: GameWorld.Enemy, t: float) -> float:
 	var x := e.x
 	var dir := e.dir
 	var remaining := t * w.enemy_speed
-	var lo := GameWorld.min_x(e.scale)
-	var hi := GameWorld.max_x(e.scale)
+	var lo := GameWorld.min_x(e.scale, w.width)
+	var hi := GameWorld.max_x(e.scale, w.width)
 	for i in 4:
 		var limit := hi if dir > 0.0 else lo
 		var dist := absf(limit - x)

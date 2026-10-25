@@ -1,38 +1,52 @@
 extends ScreenBase
 ## Title screen (docs/SPEC.md §11, §12): logo, menu START GAME / DIFFICULTY / MUSIC / MUSIC VOLUME /
-## SOUND EFFECTS / EFFECTS VOLUME / HIGHSCORES / QUIT. Up/down selects, left/right changes values, confirm
-## activates. Keyboard: Enter/Space confirm, Escape quits. Controller: A/X/Y/Start confirm, Select/Back →
+## SOUND EFFECTS / EFFECTS VOLUME / DISPLAY / HIGHSCORES / QUIT. Up/down selects, left/right changes values,
+## confirm activates. Keyboard: Enter/Space confirm, Escape quits. Controller: A/X/Y/Start confirm, Select/Back →
 ## highscores, B is ignored. Options persist via Settings and act immediately.
+## DISPLAY (widescreen round): left/right (or confirm) picks a PENDING mode out of Display.MODE_NAMES – shown in
+## the highlight colour with "Press ENTER to apply" below the menu; confirm applies it (Display.choose: stored,
+## window/canvas switched at once) → finished("display") and Main re-creates the title on the new canvas with
+## DISPLAY selected. Leaving the row drops an unapplied choice. For the 16:9 modes the line under the menu also
+## says how the picture fits the player's monitor (Display.fit_note).
 ## Volumes (SPEC §14): left/right ±10 % with the controlled menu repeat; MUSIC VOLUME is heard live in the
 ## title music, EFFECTS VOLUME plays a short preview effect at the new gain. Confirm on them only previews.
 ## Attract mode (SPEC §11.1): after AttractDirector.IDLE_TIME (90) real seconds without any player input (key,
 ## mouse button, joypad button, D-pad, stick beyond 0.5) the title hands over to the demo; any input restarts
 ## the idle timer.
-## finished: "start" | "highscores" | "quit" | "attract".
+## finished: "start" | "highscores" | "quit" | "attract" | "display".
 ## setup args: {"select": <item id>} (optional initial selection), {"attract_after": <s>} (idle time, dev/tests),
-##             {"preview_best": {name, score}} (dev screenshots only: BEST line while the stored list is empty).
+##             {"preview_best": {name, score}} (dev screenshots only: BEST line while the stored list is empty),
+##             {"display_pending": <mode>} (dev screenshots only: a pending DISPLAY choice).
 
 const GAME_TITLE := "PLANET PROTECTOR"
 const TAGLINE := "DEFEND THE SOLAR SYSTEM"
-const ITEMS: Array[String] = ["start", "difficulty", "music", "music_volume", "sfx", "sfx_volume", "highscores",
-	"quit"]
+const ITEMS: Array[String] = ["start", "difficulty", "music", "music_volume", "sfx", "sfx_volume", "display",
+	"highscores", "quit"]
 const LABELS := {"start": "START GAME", "difficulty": "DIFFICULTY", "music": "MUSIC", "music_volume": "MUSIC VOLUME",
-	"sfx": "SOUND EFFECTS", "sfx_volume": "EFFECTS VOLUME", "highscores": "HIGHSCORES", "quit": "QUIT"}
+	"sfx": "SOUND EFFECTS", "sfx_volume": "EFFECTS VOLUME", "display": "DISPLAY", "highscores": "HIGHSCORES",
+	"quit": "QUIT"}
 ## Binary ON/OFF items (left/right flips them).
 const TOGGLES: Array[String] = ["music", "sfx"]
-# Layout (960 × 720): logo + tagline on top, the 8-row menu panel, the two hint rows at the bottom.
-const LOGO_W := 620.0
-const LOGO_Y := 132.0           ## the letters start below the BEST line in the top-right corner
-const MENU_Y := 292.0
-const MENU_STEP := 41.0
-const MENU_W := 500.0
+# Layout (content coordinates, 960 × 720 – centred on the 1280 × 720 canvas in the 16:9 modes): logo + tagline
+# on top, the 9-row menu panel (wide enough for the longest DISPLAY value), the DISPLAY line under it, the two
+# hint rows at the bottom.
+const LOGO_W := 600.0
+const LOGO_Y := 128.0           ## the letters start below the BEST line in the top-right corner
+const MENU_Y := 270.0
+const MENU_STEP := 38.0
+const MENU_W := 560.0
 const MENU_FONT := 19
-const MENU_PAD := 34.0          ## panel margin above the first / below the last row centre
+const MENU_PAD := 29.0          ## panel margin above the first / below the last row centre
+const DISPLAY_LINE_Y := 630.0   ## baseline of "Press ENTER to apply" / the mode explanation (DISPLAY row)
 const HINT_Y := 664.0
-const BEST_X := W - 26.0        ## right edge of the BEST line (name up to Settings.NAME_MAX = 8 characters)
+const BEST_X := W - 26.0        ## right edge of the BEST line in 4:3 (16:9: + ox, at the canvas edge)
 const BEST_SIZE := 18
 
 var _sel := 0
+## DISPLAY row: the mode shown in the row (Display.Mode); differs from Display.mode() while not yet applied.
+var display_pending := 0
+## Monitor size for the DISPLAY line (Display.screen_size(), read once; ZERO = unknown).
+var _screen := Vector2i.ZERO
 var _demons: Array[Dictionary] = []
 var _best: Dictionary = {}
 ## Real seconds without player input (attract mode).
@@ -44,6 +58,8 @@ func _enter() -> void:
 	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS   # logo.png is imported with mipmaps
 	AudioManager.play_title_music()
 	_sel = maxi(ITEMS.find(String(args.get("select", "start"))), 0)
+	display_pending = clampi(int(args.get("display_pending", Display.mode())), 0, Display.MODE_COUNT - 1)
+	_screen = Display.screen_size()
 	_attract_after = float(args.get("attract_after", AttractDirector.IDLE_TIME))
 	_spawn_demons()
 	_refresh_best()
@@ -60,12 +76,18 @@ func _star_velocity() -> Vector2:
 
 func _spawn_demons() -> void:
 	# A few demons of different planets patrol the free space beside the menu panel (like the game's lanes):
-	# two on the left, one on the right.
+	# two on the left, one on the right – in bands from the canvas edges to the panel (wider in 16:9).
+	var l0 := left_x() + 48.0
+	var r1 := right_x() - 48.0
 	var defs := [
-		{"level": 2, "y": 335.0, "x": 70.0, "dir": 1.0, "speed": 30.0, "scale": 0.56, "min": 48.0, "max": 140.0},
-		{"level": 11, "y": 530.0, "x": 120.0, "dir": -1.0, "speed": 26.0, "scale": 0.56, "min": 48.0, "max": 140.0},
-		{"level": 17, "y": 430.0, "x": 880.0, "dir": -1.0, "speed": 28.0, "scale": 0.58, "min": 820.0, "max": 912.0},
+		{"level": 2, "y": 335.0, "x": l0 + 22.0, "dir": 1.0, "speed": 30.0, "scale": 0.56, "min": l0, "max": 126.0},
+		{"level": 11, "y": 530.0, "x": 106.0, "dir": -1.0, "speed": 26.0, "scale": 0.56, "min": l0, "max": 126.0},
+		{"level": 17, "y": 430.0, "x": r1 - 32.0, "dir": -1.0, "speed": 28.0, "scale": 0.58, "min": 834.0, "max": r1},
 	]
+	if ox > 0.0:
+		# 16:9: one more demon in the upper right band, beside the logo.
+		defs.append({"level": 8, "y": 230.0, "x": r1 - 90.0, "dir": 1.0, "speed": 24.0, "scale": 0.5, "min": 880.0,
+			"max": r1})
 	for d: Dictionary in defs:
 		var e := EnemyArt.new()
 		e.configure(int(d["level"]))
@@ -108,6 +130,7 @@ func _tick(delta: float) -> void:
 	var dir := InputRouter.menu_direction()
 	if dir.y != 0:
 		_sel = posmod(_sel + dir.y, ITEMS.size())
+		display_pending = Display.mode()   # leaving (or entering) the DISPLAY row drops an unapplied choice
 		sfx("menu_move")
 	elif dir.x != 0 and accepts_step(ITEMS[_sel], InputRouter.menu_direction_is_repeat()):
 		_change(ITEMS[_sel], dir.x)
@@ -155,6 +178,22 @@ func _change(item: String, step: int) -> void:
 				return   # already at 0 % / 100 %
 			AudioManager.apply_settings()   # at once (Settings.changed does it too once the autoloads run)
 			_volume_feedback(item)
+		"display":
+			display_pending = posmod(display_pending + step, Display.MODE_COUNT)
+			sfx("menu_move")
+
+
+## True while the DISPLAY row shows a mode that is not applied yet.
+func display_is_pending() -> bool:
+	return display_pending != Display.mode()
+
+
+## Applies the pending display mode: stored, canvas and window switched at once; Main re-creates the title.
+func _apply_display() -> void:
+	sfx("menu_confirm")
+	Display.choose(display_pending)
+	Settings.set_display_chosen(true)
+	finish("display", {"mode": display_pending})
 
 
 ## Sound after a volume change: the effects preview (at the new gain) for EFFECTS VOLUME; for MUSIC VOLUME
@@ -176,6 +215,11 @@ func _activate(item: String) -> void:
 			finish("quit")
 		"music_volume", "sfx_volume":
 			_volume_feedback(item)   # confirm does not change a volume (no accidental wrap to 0 %)
+		"display":
+			if display_is_pending():
+				_apply_display()
+			else:
+				_change(item, 1)   # like the other value rows: confirm steps; a second confirm applies
 		_:
 			_change(item, 1)
 
@@ -188,6 +232,8 @@ func _value(item: String) -> String:
 			return "ON" if Settings.music_on else "OFF"
 		"sfx":
 			return "ON" if Settings.sfx_on else "OFF"
+		"display":
+			return Display.mode_name(display_pending)
 	return ""
 
 
@@ -204,10 +250,39 @@ func _draw() -> void:
 			# The bar is dimmed while the matching ON/OFF option is OFF.
 			UiKit.menu_item_volume(self, c, LABELS[item], Settings.volume(item), selected, time, MENU_W, MENU_FONT,
 				Settings.volume_switch_on(item))
+		elif item == "display" and display_is_pending():
+			var pulse := 0.5 + 0.5 * sin(time * 5.0)
+			UiKit.menu_item(self, c, LABELS[item], _value(item), selected, time, MENU_W, MENU_FONT,
+				UiKit.COLOR_HILITE.lerp(Color.WHITE, 0.25 * pulse))
 		else:
 			UiKit.menu_item(self, c, LABELS[item], _value(item), selected, time, MENU_W, MENU_FONT)
+	_draw_display_line()
 	_draw_best()
 	_draw_hints()
+
+
+## Under the menu while DISPLAY is selected: "Press ENTER to apply" for a pending mode, else what the mode is.
+func _draw_display_line() -> void:
+	if ITEMS[_sel] != "display":
+		return
+	if display_is_pending():
+		var a := 0.75 + 0.25 * sin(time * 5.0)
+		UiKit.text_glow(self, Assets.font_body_bold, Vector2(CX, DISPLAY_LINE_Y), display_line_text(true), 16,
+			Color(UiKit.COLOR_HILITE, a), UiKit.COLOR_HILITE, HORIZONTAL_ALIGNMENT_CENTER, 0.6)
+	else:
+		UiKit.text(self, Assets.font_body, Vector2(CX, DISPLAY_LINE_Y), display_line_text(false), 15, UiKit.COLOR_DIM,
+			HORIZONTAL_ALIGNMENT_CENTER)
+
+
+## Text of the DISPLAY line: the apply prompt for a pending mode, else the explanation of the shown mode. For a
+## 16:9 mode on a known monitor the explanation is shortened and says how the picture fits the monitor
+## (Display.fit_note: "best fit for your 1920×1200 screen" / "scaled down to …" / "scaled up to …").
+func display_line_text(pending: bool) -> String:
+	var note := Display.fit_note(display_pending, _screen)
+	var info := String(Display.MODE_INFO[display_pending])
+	if note != "":
+		info = "%s  ·  %s" % [String(Display.MODE_SHORT[display_pending]), note]
+	return "Press ENTER to apply  ·  %s" % info if pending else info
 
 
 ## Backing panel of the menu (all rows plus MENU_PAD above and below).
@@ -254,9 +329,10 @@ func _draw_best() -> void:
 	if _best.is_empty():
 		return
 	var diff_name := String(ShipData.difficulty(Settings.difficulty)["name"])
-	UiKit.text(self, Assets.font_body, Vector2(BEST_X, 32), "BEST · %s" % diff_name, 13, UiKit.COLOR_FAINT,
+	var bx := BEST_X + ox   # at the right edge of the canvas
+	UiKit.text(self, Assets.font_body, Vector2(bx, 32), "BEST · %s" % diff_name, 13, UiKit.COLOR_FAINT,
 		HORIZONTAL_ALIGNMENT_RIGHT)
-	UiKit.text(self, Assets.font_title, Vector2(BEST_X, 56), best_text(_best), BEST_SIZE, UiKit.COLOR_GOLD,
+	UiKit.text(self, Assets.font_title, Vector2(bx, 56), best_text(_best), BEST_SIZE, UiKit.COLOR_GOLD,
 		HORIZONTAL_ALIGNMENT_RIGHT)
 
 

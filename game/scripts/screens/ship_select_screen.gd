@@ -82,9 +82,10 @@ func _draw() -> void:
 	var ship: Dictionary = ShipData.ship(_sel)
 	UiKit.text(self, Assets.font_body, Vector2(CX, 85), BLURBS[_sel], 17, Color(ship["accent"]).lerp(Color.WHITE, 0.45),
 		HORIZONTAL_ALIGNMENT_CENTER)
-	UiKit.text(self, Assets.font_body, Vector2(W - 24, 30), "DIFFICULTY", 12, UiKit.COLOR_FAINT,
+	var rx := right_x() - 24.0   # top-right corner of the canvas (16:9 too)
+	UiKit.text(self, Assets.font_body, Vector2(rx, 30), "DIFFICULTY", 12, UiKit.COLOR_FAINT,
 		HORIZONTAL_ALIGNMENT_RIGHT)
-	UiKit.text(self, Assets.font_title, Vector2(W - 24, 50), String(ShipData.difficulty(Settings.difficulty)["name"]),
+	UiKit.text(self, Assets.font_title, Vector2(rx, 50), String(ShipData.difficulty(Settings.difficulty)["name"]),
 		15, UiKit.COLOR_ACCENT, HORIZONTAL_ALIGNMENT_RIGHT)
 	for i in ShipData.SHIPS.size():
 		_draw_tile(i)

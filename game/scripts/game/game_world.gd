@@ -5,6 +5,10 @@ extends RefCounted
 ## Time base: update() receives REAL seconds; the world converts them into game time
 ## (game_dt = real_dt * speed_factor) and advances in fixed sub-steps of LevelData.SIM_STEP.
 ## Everything is driven by one seeded RandomNumberGenerator, so a run is reproducible.
+## Playfield width (SPEC §18.1): `width` is 960 (classic 4:3) or 1280 (16:9) and fixed for the world's life. Only
+## the horizontal limits follow it (player clamp / start, enemy turning and spawn limits, sideways bullet removal);
+## every speed, distance, hit box, timing and lane y stays the same. With width 960 the world is bit-for-bit the
+## classic one.
 
 enum State { INTRO, PLAYING, RESPAWN, CLEARING, COMPLETE, GAME_OVER_WAIT, GAME_OVER }
 
@@ -88,6 +92,8 @@ var level := 1
 var difficulty := 1
 var ship_id := 0
 var speed_factor := 1.0
+## Playfield width in px (SPEC §18.1): LevelData.SCREEN_W (960) or the 16:9 width 1280. Never narrower than 960.
+var width := LevelData.SCREEN_W
 var rng := RandomNumberGenerator.new()
 
 ## Dev / test switches.
@@ -144,7 +150,10 @@ var _points := 0
 var _fire_factor := 0.0
 
 
-func _init(p_level: int, p_difficulty: int, p_ship_id: int, p_lives: int, rng_seed: int = 0) -> void:
+func _init(p_level: int, p_difficulty: int, p_ship_id: int, p_lives: int, rng_seed: int = 0,
+		p_width: float = LevelData.SCREEN_W) -> void:
+	width = maxf(p_width, LevelData.SCREEN_W)
+	player_x = LevelData.player_start_x(width)
 	level = clampi(p_level, LevelData.FIRST_LEVEL, LevelData.LAST_LEVEL)
 	difficulty = int(ShipData.difficulty(p_difficulty)["id"])
 	speed_factor = float(ShipData.difficulty(p_difficulty)["speed_factor"])
@@ -243,12 +252,13 @@ func rank_holder(r: int) -> Enemy:
 
 
 ## Horizontal turning limits of an enemy CENTER (SPEC §5): the same for every figure, children included.
-static func min_x(_s: float = 1.0) -> float:
+## `w` = playfield width (SPEC §18.1): the right limit keeps its 50 px margin to the right screen edge.
+static func min_x(_s: float = 1.0, _w: float = LevelData.SCREEN_W) -> float:
 	return LevelData.ENEMY_MIN_X
 
 
-static func max_x(_s: float = 1.0) -> float:
-	return LevelData.ENEMY_MAX_X
+static func max_x(_s: float = 1.0, w: float = LevelData.SCREEN_W) -> float:
+	return LevelData.enemy_max_x(w)
 
 
 func is_finished() -> bool:
@@ -356,7 +366,8 @@ func _combat_step(dt: float, axis: float, fire_held: bool) -> void:
 func _move_player(dt: float, axis: float) -> void:
 	if not player_alive:
 		return
-	player_x = clampf(player_x + axis * LevelData.PLAYER_SPEED * dt, LevelData.PLAYER_MIN_X, LevelData.PLAYER_MAX_X)
+	player_x = clampf(player_x + axis * LevelData.PLAYER_SPEED * dt, LevelData.PLAYER_MIN_X,
+		LevelData.player_max_x(width))
 
 
 ## Creates a new salvo (SPEC §4). Caller guarantees that the previous salvo is gone.
@@ -431,7 +442,7 @@ func _player_hit() -> void:
 
 
 func _respawn() -> void:
-	player_x = LevelData.PLAYER_START_X
+	player_x = LevelData.player_start_x(width)
 	player_alive = true
 	state = State.PLAYING
 	_reset_rank_timers()
@@ -481,8 +492,8 @@ func _spawn_original(slot_idx: int) -> Enemy:
 ## and the first factor that leaves room is used – the best compromise keeps as much of both as possible.
 ## The free set is computed exactly (no sampling), so exactly one random number is used per spawn.
 func _pick_spawn_x(lane: int) -> float:
-	var lo := min_x(1.0)
-	var hi := max_x(1.0)
+	var lo := min_x(1.0, width)
+	var hi := max_x(1.0, width)
 	for k in LevelData.SPAWN_RELAX_STEPS + 1:
 		var f := 1.0 - float(k) / float(LevelData.SPAWN_RELAX_STEPS)
 		var free := _spawn_free_segments(lane, f, lo, hi)
@@ -593,8 +604,8 @@ func _move_enemies(dt: float) -> void:
 		e.age += dt
 		e.turn_age += dt
 		e.x += e.dir * enemy_speed * dt
-		var lo := min_x(e.scale)
-		var hi := max_x(e.scale)
+		var lo := min_x(e.scale, width)
+		var hi := max_x(e.scale, width)
 		if e.x <= lo:
 			e.x = lo
 			_set_dir(e, 1.0)
@@ -770,7 +781,7 @@ func _split(e: Enemy, s: Shot) -> void:
 		c.stage = e.stage
 		var side := -1.0 if k == 0 else 1.0
 		c.dir = side
-		c.x = clampf(e.x + side * LevelData.CHILD_SPAWN_OFFSET, min_x(cs), max_x(cs))
+		c.x = clampf(e.x + side * LevelData.CHILD_SPAWN_OFFSET, min_x(cs, width), max_x(cs, width))
 		c.y = e.y
 		c.armed = _child_armed_default(e.lane)
 		kids.append(c)
@@ -919,16 +930,17 @@ func _fire_salvo(e: Enemy) -> void:
 	var n := int(_fire["child_count"]) if e.is_child else int(_fire["count"])
 	if n <= 0:
 		return
-	var width := float(_fire["width"])
+	# Salvo width in % of the enemy width (0.55–1.0) – not the playfield width member `width`.
+	var salvo_w := float(_fire["width"])
 	var vel := LevelData.bullet_velocity(int(_fire["dir"]), player_x, e.x)
 	var y0 := e.y + LevelData.ENEMY_BULLET_SPAWN_DY * e.scale
 	if bool(_fire["columns"]):
 		# Level 10: adjacent columns of two bullets, the second one 18 px above.
-		for off in LevelData.salvo_offsets(n >> 1, width, e.scale):
+		for off in LevelData.salvo_offsets(n >> 1, salvo_w, e.scale):
 			_spawn_bullet(e.x + off, y0, vel, e.id)
 			_spawn_bullet(e.x + off, y0 - LevelData.LEVEL10_COLUMN_DY, vel, e.id)
 	else:
-		for off in LevelData.salvo_offsets(n, width, e.scale):
+		for off in LevelData.salvo_offsets(n, salvo_w, e.scale):
 			_spawn_bullet(e.x + off, y0, vel, e.id)
 	events.append({"type": "enemy_fire", "id": e.id, "x": e.x, "y": y0, "count": n, "vx": vel.x, "vy": vel.y})
 
@@ -948,8 +960,8 @@ func _move_bullets(dt: float) -> void:
 		if not b.landed and b.y + BULLET_HALF >= LevelData.GROUND_Y:
 			b.landed = true
 			events.append({"type": "bullet_landed", "x": b.x})
-		# Swallowed by the ground once entirely below it; also removed when entirely off-screen sideways.
-		if b.y - BULLET_HALF > LevelData.GROUND_Y or b.x + BULLET_HALF < 0.0 or b.x - BULLET_HALF > LevelData.SCREEN_W:
+		# Swallowed by the ground once entirely below it; also removed when entirely off-screen sideways (0 / width).
+		if b.y - BULLET_HALF > LevelData.GROUND_Y or b.x + BULLET_HALF < 0.0 or b.x - BULLET_HALF > width:
 			bullets.remove_at(i)
 		else:
 			i += 1

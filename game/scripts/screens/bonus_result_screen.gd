@@ -51,7 +51,8 @@ func _tick(delta: float) -> void:
 
 func _draw() -> void:
 	var a := ramp(0.0, 0.35)
-	Assets.draw_planet(self, "mars", Vector2(150, 610), 380.0, Color(1, 1, 1, 0.42 * ramp(0.0, 0.8)))
+	# Mars in the lower left corner (16:9: the same distance from the canvas edge).
+	Assets.draw_planet(self, "mars", Vector2(150.0 - ox, 610), 380.0, Color(1, 1, 1, 0.42 * ramp(0.0, 0.8)))
 	draw_title("BONUS ROUND COMPLETE", 112, 36, Color(UiKit.COLOR_TEXT, a), UiKit.COLOR_ACCENT)
 	UiKit.text(self, Assets.font_body, Vector2(CX, 152), LevelData.BONUS_TITLE, 21, Color(UiKit.COLOR_ACCENT, a),
 		HORIZONTAL_ALIGNMENT_CENTER)

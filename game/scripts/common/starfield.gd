@@ -9,6 +9,8 @@ extends Node2D
 ## nebula haze. Nothing is rebuilt per frame: all textures are generated once and cached statically
 ## (shared by every Starfield instance with the same density). The scroll position is shared too, so
 ## the sky continues seamlessly from one screen to the next.
+## Size: the logical canvas (Display.logical_size(): 960×720 or 1280×720 in the 16:9 modes) unless set; every
+## size has its own cached textures (same star density per pixel) and its own shared scroll state.
 ## Fast horizontal motion (arrival sequence, e.g. velocity = Vector2(-900, 0)) cross-fades the dot
 ## layers into pre-rendered streak layers and stretches the sprite stars into streaks.
 
@@ -22,8 +24,12 @@ var density := 1.0:
 			_build()
 ## Intensity of the faint nebula haze (0 = off, 1 = default subtle look).
 var nebula := 1.0
-## Area covered (stars wrap around inside it).
-var size := Vector2(960, 720)
+## Area covered (stars wrap around inside it). Default: the logical canvas of the current display mode.
+var size := Vector2.ZERO:
+	set(value):
+		size = value
+		if is_inside_tree():
+			_build()
 
 ## Depth (speed factor) of the three pre-rendered layers: far, middle, near-ish.
 const LAYER_DEPTH: Array[float] = [0.14, 0.3, 0.55]
@@ -31,8 +37,9 @@ const LAYER_COUNT: Array[int] = [1150, 430, 150]
 const NEBULA_DEPTH := 0.06
 const NEAR_COUNT := 46
 const BRIGHT_COUNT := 13
-const TEX_W := 960
-const TEX_H := 720
+## Reference area of LAYER_COUNT / NEAR_COUNT / BRIGHT_COUNT (other sizes scale the counts by area).
+const BASE_W := 960
+const BASE_H := 720
 ## Streak length (px) baked into the streak version of layer 1 and 2.
 const STREAK_LEN: Array[int] = [0, 13, 26]
 
@@ -42,8 +49,8 @@ const TINTS: Array[Color] = [
 ]
 const TINT_WEIGHTS: Array[float] = [0.42, 0.26, 0.12, 0.14, 0.06]
 
-static var _cache := {}        # density key → built data (textures + star tables)
-static var _shared := {}       # density key → scroll state, so the sky continues across screens
+static var _cache := {}        # density + size key → built data (textures + star tables)
+static var _shared := {}       # density + size key → scroll state, so the sky continues across screens
 static var _stamps := {}       # stamp key → Image
 
 var _data: Dictionary = {}
@@ -54,6 +61,10 @@ var _near_pos := PackedVector2Array()
 var _bright_pos := PackedVector2Array()
 var _time := 0.0
 var _nebula_node: Node2D
+
+
+func _init() -> void:
+	size = Vector2(Display.logical_size())
 
 
 func _ready() -> void:
@@ -199,9 +210,10 @@ func _store_state() -> void:
 
 
 func _build() -> void:
-	_key = "%.3f" % density
+	var dims := tex_size()
+	_key = "%.3f|%dx%d" % [density, dims.x, dims.y]
 	if not _cache.has(_key):
-		_cache[_key] = _generate(density)
+		_cache[_key] = _generate(density, dims)
 	_data = _cache[_key]
 	var near: Array = _data["near"]
 	var bright: Array = _data["bright"]
@@ -222,11 +234,20 @@ func _build() -> void:
 	queue_redraw()
 
 
-# --- Generation (once per density, cached) -------------------------------------------------------
-static func _generate(dens: float) -> Dictionary:
+## Pixel size of the cached textures (= size, rounded; at least 16×16).
+func tex_size() -> Vector2i:
+	return Vector2i(maxi(roundi(size.x), 16), maxi(roundi(size.y), 16))
+
+
+# --- Generation (once per density and size, cached) ----------------------------------------------
+static func _generate(dens: float, dims: Vector2i) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 20260423
-	var data := {}
+	var data := {"w": dims.x, "h": dims.y}
+	var tw := dims.x
+	var th := dims.y
+	# Same density per pixel for every size (the 960×720 sky is the reference).
+	var area := float(tw * th) / float(BASE_W * BASE_H)
 	# Nebula haze: two seamless noise layers, high contrast so most of the sky stays black.
 	var neb_tex: Array[Texture2D] = []
 	var neb_img: Array[Image] = []
@@ -238,7 +259,7 @@ static func _generate(dens: float) -> Dictionary:
 		n.fractal_type = FastNoiseLite.FRACTAL_FBM
 		n.fractal_octaves = 3
 		n.fractal_gain = 0.5
-		var img := n.get_seamless_image(320, 240, false, false, 0.2, true)
+		var img := n.get_seamless_image(maxi(tw / 3, 8), maxi(th / 3, 8), false, false, 0.2, true)
 		img.convert(Image.FORMAT_RGBA8)
 		img.adjust_bcs(0.80 if i == 0 else 0.74, 2.5 if i == 0 else 3.4, 1.0)
 		neb_img.append(img)
@@ -247,15 +268,15 @@ static func _generate(dens: float) -> Dictionary:
 	# Density map: nebula brightness + a few compact clusters (uneven, natural distribution).
 	var clusters: Array[Vector3] = []
 	for i in 6:
-		clusters.append(Vector3(rng.randf() * TEX_W, rng.randf() * TEX_H, rng.randf_range(22.0, 60.0)))
+		clusters.append(Vector3(rng.randf() * tw, rng.randf() * th, rng.randf_range(22.0, 60.0)))
 	var layers: Array[Texture2D] = []
 	var layer_stars: Array = []
 	for li in LAYER_DEPTH.size():
-		var img := Image.create(TEX_W, TEX_H, false, Image.FORMAT_RGBA8)
+		var img := Image.create(tw, th, false, Image.FORMAT_RGBA8)
 		var stars: Array[Vector4i] = []   # x, y, alpha level, tint
-		var count := int(LAYER_COUNT[li] * dens)
+		var count := int(LAYER_COUNT[li] * dens * area)
 		for s in count:
-			var p := _sample_position(rng, neb_img[0], clusters)
+			var p := _sample_position(rng, neb_img[0], clusters, dims)
 			var a: float
 			var sigma_idx: int
 			match li:
@@ -271,7 +292,7 @@ static func _generate(dens: float) -> Dictionary:
 			var ai := clampi(int(round(a * 16.0)) - 1, 0, 15)
 			var ti := _pick_tint(rng)
 			var stamp := _dot_stamp(sigma_idx, ai, ti)
-			_blend_wrapped(img, stamp, Vector2i(int(p.x), int(p.y)))
+			_blend_wrapped(img, stamp, Vector2i(int(p.x), int(p.y)), dims)
 			stars.append(Vector4i(int(p.x), int(p.y), ai, ti))
 		layers.append(ImageTexture.create_from_image(img))
 		layer_stars.append(stars)
@@ -280,17 +301,17 @@ static func _generate(dens: float) -> Dictionary:
 	data["streak_tex"] = {}
 	# Medium stars (sprites, near depths) and bright stars with halos.
 	var near: Array = []
-	for i in int(NEAR_COUNT * dens):
+	for i in int(NEAR_COUNT * dens * area):
 		var ti := _pick_tint(rng)
-		near.append({"pos": _sample_position(rng, neb_img[0], clusters), "depth": rng.randf_range(0.7, 1.0),
+		near.append({"pos": _sample_position(rng, neb_img[0], clusters, dims), "depth": rng.randf_range(0.7, 1.0),
 			"size": rng.randf_range(2.0, 3.3), "alpha": rng.randf_range(0.45, 0.85), "color": TINTS[ti],
 			"phase": rng.randf() * TAU, "freq": rng.randf_range(0.5, 1.6)})
 	data["near"] = near
 	var bright: Array = []
-	for i in maxi(int(BRIGHT_COUNT * dens), 3):
+	for i in maxi(int(BRIGHT_COUNT * dens * area), 3):
 		var ti := _pick_tint(rng)
 		var big := i < 3
-		bright.append({"pos": _sample_position(rng, neb_img[0], clusters), "depth": rng.randf_range(0.6, 1.0),
+		bright.append({"pos": _sample_position(rng, neb_img[0], clusters, dims), "depth": rng.randf_range(0.6, 1.0),
 			"size": rng.randf_range(3.6, 4.6) if big else rng.randf_range(2.8, 3.8),
 			"halo": rng.randf_range(30.0, 44.0) if big else rng.randf_range(14.0, 24.0),
 			"halo_alpha": rng.randf_range(0.20, 0.30) if big else rng.randf_range(0.12, 0.2),
@@ -303,20 +324,21 @@ static func _generate(dens: float) -> Dictionary:
 	return data
 
 
-static func _sample_position(rng: RandomNumberGenerator, neb: Image, clusters: Array[Vector3]) -> Vector2:
+static func _sample_position(rng: RandomNumberGenerator, neb: Image, clusters: Array[Vector3],
+		dims: Vector2i) -> Vector2:
 	# 18 % of the stars belong to compact clusters, the rest follow the nebula density.
 	if rng.randf() < 0.18:
 		var c: Vector3 = clusters[rng.randi() % clusters.size()]
 		var r := absf(rng.randfn(0.0, c.z))
 		var ang := rng.randf() * TAU
-		return Vector2(fposmod(c.x + cos(ang) * r, TEX_W), fposmod(c.y + sin(ang) * r, TEX_H))
+		return Vector2(fposmod(c.x + cos(ang) * r, dims.x), fposmod(c.y + sin(ang) * r, dims.y))
 	for attempt in 12:
-		var p := Vector2(rng.randf() * TEX_W, rng.randf() * TEX_H)
-		var n := neb.get_pixel(int(p.x / TEX_W * neb.get_width()) % neb.get_width(),
-			int(p.y / TEX_H * neb.get_height()) % neb.get_height()).r
+		var p := Vector2(rng.randf() * dims.x, rng.randf() * dims.y)
+		var n := neb.get_pixel(int(p.x / dims.x * neb.get_width()) % neb.get_width(),
+			int(p.y / dims.y * neb.get_height()) % neb.get_height()).r
 		if rng.randf() < 0.22 + 0.78 * n:
 			return p
-	return Vector2(rng.randf() * TEX_W, rng.randf() * TEX_H)
+	return Vector2(rng.randf() * dims.x, rng.randf() * dims.y)
 
 
 static func _pick_tint(rng: RandomNumberGenerator) -> int:
@@ -328,15 +350,15 @@ static func _pick_tint(rng: RandomNumberGenerator) -> int:
 	return 0
 
 
-static func _blend_wrapped(img: Image, stamp: Image, center: Vector2i) -> void:
+static func _blend_wrapped(img: Image, stamp: Image, center: Vector2i, dims: Vector2i) -> void:
 	var w := stamp.get_width()
 	var h := stamp.get_height()
 	var tl := center - Vector2i(w >> 1, h >> 1)
 	var src := Rect2i(0, 0, w, h)
-	for dx in [0, -TEX_W, TEX_W]:
-		for dy in [0, -TEX_H, TEX_H]:
+	for dx in [0, -dims.x, dims.x]:
+		for dy in [0, -dims.y, dims.y]:
 			var p: Vector2i = tl + Vector2i(dx, dy)
-			if p.x + w <= 0 or p.y + h <= 0 or p.x >= TEX_W or p.y >= TEX_H:
+			if p.x + w <= 0 or p.y + h <= 0 or p.x >= dims.x or p.y >= dims.y:
 				continue
 			img.blend_rect(stamp, src, p)
 
@@ -392,9 +414,10 @@ func _streak_texture(i: int, tail_dir: int) -> Texture2D:
 	var cache: Dictionary = _data["streak_tex"]
 	var key := i * 10 + (1 if tail_dir > 0 else 0)
 	if not cache.has(key):
-		var img := Image.create(TEX_W, TEX_H, false, Image.FORMAT_RGBA8)
+		var dims := Vector2i(int(_data["w"]), int(_data["h"]))
+		var img := Image.create(dims.x, dims.y, false, Image.FORMAT_RGBA8)
 		for s: Vector4i in _data["layer_stars"][i]:
-			_blend_wrapped(img, _streak_stamp(STREAK_LEN[i], s.z, s.w, tail_dir), Vector2i(s.x, s.y))
+			_blend_wrapped(img, _streak_stamp(STREAK_LEN[i], s.z, s.w, tail_dir), Vector2i(s.x, s.y), dims)
 		cache[key] = ImageTexture.create_from_image(img)
 	return cache[key]
 

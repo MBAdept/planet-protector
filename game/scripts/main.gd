@@ -9,11 +9,15 @@ extends Node
 ##   --screen=<name> [--arrival=N] [--name=ABC]  open one screen with fake run data (see RunFlow.SCREENS);
 ##                                           --name: initial name (name_entry), highlighted row of the fake
 ##                                           list (highscores), fake BEST line (title) – only without stored scores
+##   --select=<item> [--pending-display=<m>] (with --screen=title) initial menu row / a pending DISPLAY choice
 ##   --screen=attract                        start a demo run (attract mode) directly
 ##   --attract-after=<s>                     idle time on the title before the demo starts (default 90)
 ##   --attract-level=N --attract-seed=S      fixed demo level (1–20 except 13) / random seed (deterministic captures)
-##   --screenshot=<abs path.png> [--screenshot-delay=<s>]   save a viewport PNG, then quit
+##   --screenshot=<abs path.png> [--screenshot-delay=<s>]   save a viewport PNG, then quit (16:9 modes: exactly the
+##                                           render size 1920×1080 / 2560×1440; mode 0: the window, 1280×960)
 ##   --quit-after=<s>                        quit after s seconds
+##   --display=<0|1|2>                       display mode for this run (Display; not stored, no first-start screen)
+##   --first-start                           show the first-start display choice even if one is stored
 
 const GameScreenScript := preload("res://scripts/game/game_screen.gd")
 const SCREEN_SCRIPTS := {
@@ -27,6 +31,7 @@ const SCREEN_SCRIPTS := {
 	"game_over": preload("res://scripts/screens/game_over_screen.gd"),
 	"name_entry": preload("res://scripts/screens/name_entry_screen.gd"),
 	"highscores": preload("res://scripts/screens/highscores_screen.gd"),
+	"display_select": preload("res://scripts/screens/display_select_screen.gd"),
 }
 
 var _screen: Node = null
@@ -50,8 +55,11 @@ func _ready() -> void:
 		"invincible": dev and _args.has("invincible"),
 		"autoplay": dev and _args.has("autoplay"),
 	}
+	# Display mode (--display is read by the Display autoload itself, so dev scenes get it too): the canvas is
+	# set up already; the window follows here (not in screenshot runs – their image is the render size anyway).
+	Display.apply_canvas()
 	if not _args.has("screenshot"):
-		InputRouter.apply_window_mode()
+		Display.apply_window()
 	AudioManager.apply_settings()
 	if _args.has("screenshot"):
 		_take_screenshot_later(String(_args["screenshot"]), RunFlow.arg_float(_args, "screenshot-delay", 1.0))
@@ -64,7 +72,8 @@ func _ready() -> void:
 		Run.start_new(_arg_difficulty(), _arg_ship(), lvl)
 		_go(RunFlow.step("level", lvl))
 	else:
-		_go(RunFlow.step("title"))
+		_go(RunFlow.step(RunFlow.first_screen(Settings.display_chosen, Display.forced_mode >= 0,
+			_args.has("first-start"))))
 
 
 # --- Flow ----------------------------------------------------------------------------------------
@@ -79,6 +88,9 @@ func _go(st: Dictionary, extra: Dictionary = {}) -> void:
 			get_tree().quit()
 		"level":
 			_start_level(_level)
+		"display_select":
+			Run.active = false
+			_open("display_select", extra)
 		"title":
 			Run.active = false
 			if _args.has("attract-after"):
@@ -167,6 +179,9 @@ func _handle_finished(result: String, data: Dictionary, from: String, emitter: N
 			if _hs_from_title:
 				_go(nxt, {"difficulty": Settings.difficulty})
 				return
+			if result == "display":
+				_go(nxt, {"select": "display"})   # the title again, on the new canvas
+				return
 		"ship_select":
 			if result == "confirm":
 				Run.start_new(Settings.difficulty, int(data.get("ship", 0)))
@@ -233,12 +248,20 @@ func _open_dev_screen(screen_name: String) -> void:
 		"extra_life": LevelData.bonus_gives_extra_life(bonus)}
 	_level = lvl
 	match screen_name:
+		"display_select":
+			Run.active = false
+			_go(RunFlow.step(screen_name))
+			return
 		"title", "ship_select":
 			Run.active = false
 			Run.score = 0
 			var extra := {}
 			if screen_name == "title" and _args.has("name") and Settings.get_highscores(Settings.difficulty).is_empty():
 				extra["preview_best"] = {"name": _arg_name(), "score": 48000}
+			if screen_name == "title" and _args.has("select"):
+				extra["select"] = String(_args["select"])
+			if screen_name == "title" and _args.has("pending-display"):
+				extra["display_pending"] = RunFlow.arg_int(_args, "pending-display", 0, 0, Display.MODE_COUNT - 1)
 			_go(RunFlow.step(screen_name), extra)
 		"highscores":
 			var extra := {"difficulty": diff}
