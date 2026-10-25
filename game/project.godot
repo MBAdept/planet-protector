@@ -20,6 +20,7 @@ InputRouter="*res://scripts/autoload/input_router.gd"
 Assets="*res://scripts/autoload/assets.gd"
 Run="*res://scripts/autoload/run_state.gd"
 AudioManager="*res://scripts/autoload/audio_manager.gd"
+Display="*res://scripts/autoload/display.gd"
 
 [display]
 
