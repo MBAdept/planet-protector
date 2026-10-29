@@ -3,3 +3,4 @@ build/
 *.blend1
 __pycache__/
 docs/previews/
+.claude/worktrees/
