@@ -112,6 +112,21 @@ const ARRIVAL_AFTER := {
 const VICTORY_TEXT := "You are a real champion on the trigger. You moved smoothly through enemy lines, you destroyed them all! Everlasting love to You, oh great PLANET PROTECTOR!"
 const BONUS_TITLE := "Prove Your Accuracy!"
 
+# --- Power-ups (SPEC §19.3, client request, forum round; only with POWER-UPS ON) ---------------------
+## One power-up per level on Saturn, Jupiter and Mars; the player triggers it once (power-up button). None on Neptune,
+## Uranus, the bonus level 13 and Earth.
+enum PowerUp { NONE, RAPID_FIRE, TWIN, SHIELD }
+const POWERUP_NAMES := {PowerUp.RAPID_FIRE: "RAPID FIRE", PowerUp.TWIN: "TWIN", PowerUp.SHIELD: "SHIELD"}
+## Duration in REAL seconds (the world converts it with the difficulty's speed factor).
+const POWERUP_TIME := {PowerUp.RAPID_FIRE: 10.0, PowerUp.TWIN: 15.0, PowerUp.SHIELD: 10.0}
+## Rapid fire: game seconds between two salvos PER SHOT of the salvo (single ships 0.18 s, double ships 0.36 s), so
+## every ship fires the same number of shots per second; the one-salvo-at-a-time rule is suspended meanwhile.
+const RAPID_FIRE_INTERVAL := 0.18
+## Shield: an enemy bullet whose centre comes within |dx| < SHIELD_DX and |dy| < SHIELD_DY of the ship centre
+## (x, PLAYER_Y) is absorbed (a superset of the ship's hit box 21 × 15, so nothing reaches the ship).
+const SHIELD_DX := 34.0
+const SHIELD_DY := 30.0
+
 # --- Colours (top → bottom gradient stops) -------------------------------------------------------
 const C_VIOLET_STOPS: Array[Color] = [Color(0.66, 0.28, 1.0), Color(0.06, 0.02, 0.09)]
 const C_YELLOW_STOPS: Array[Color] = [Color(1.0, 0.98, 0.60), Color(0.62, 0.50, 0.0)]
@@ -253,6 +268,17 @@ static func planet_of(n: int) -> String:
 	if n <= 16:
 		return "mars"
 	return "earth"
+
+
+## Power-up of level n (SPEC §19.3): Saturn 7–9 rapid fire, Jupiter 10–12 twin, Mars 14–16 shield, else NONE.
+static func powerup_of(n: int) -> int:
+	if n >= 7 and n <= 9:
+		return PowerUp.RAPID_FIRE
+	if n >= 10 and n <= 12:
+		return PowerUp.TWIN
+	if n >= 14 and n <= 16:
+		return PowerUp.SHIELD
+	return PowerUp.NONE
 
 
 ## Zoom stage 1..3 of the background planet (SPEC §15).

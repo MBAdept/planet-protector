@@ -19,7 +19,8 @@ extends RefCounted
 ##   TITLE idle 90 s ──▶ ATTRACT (demo) ──end / any input──▶ TITLE
 
 const SCREENS: Array[String] = ["title", "ship_select", "interlevel", "arrival", "mars_rules", "bonus_result",
-	"victory", "game_over", "name_entry", "highscores", "display_select"]
+	"victory", "game_over", "name_entry", "highscores", "display_select", "ship_lock", "handover", "lock_reveal",
+	"match_result"]
 
 
 static func step(screen: String, level: int = 0) -> Dictionary:

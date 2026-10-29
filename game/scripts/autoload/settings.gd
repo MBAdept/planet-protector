@@ -7,6 +7,11 @@ extends Node
 ## Display (client request, widescreen round; Steam Deck round): display_mode 0–4 = Display.Mode (0 = the
 ## classic 4:3 window, default; 3 / 4 = the Steam Deck 1280×800 and the 1280×720 modes) and display_chosen (false until the player confirmed a mode on the first-start screen). Files written
 ## before these keys existed read as mode 0, not chosen – so that screen appears once.
+## Two players / power-ups (SPEC §19, client request, forum round): the title's PLAYERS (1 / 2) and POWER-UPS (OFF / ON)
+## are stored as [game] players / powerups (missing keys: 1 player, power-ups off). Power-up runs have their OWN four
+## highscore lists (JSON keys "p0" … "p3" next to the classic "0" … "3"; older files simply have none). A two-player
+## match enters both players' scores into the normal lists of its difficulty and power-up setting (the rules per
+## player are exactly those of a one-player run).
 
 signal changed
 
@@ -33,13 +38,17 @@ var sfx_volume := DEFAULT_VOLUME     ## percent, multiple of VOLUME_STEP
 var display_mode := 0               ## Display.Mode: 0 classic 4:3 window, 1 / 2 fullscreen 16:9 (1080 / 1440),
                                     ## 3 fullscreen 16:10 1280×800 (Steam Deck), 4 fullscreen 16:9 1280×720
 var display_chosen := false         ## the player confirmed a mode on the first-start screen
+var players := 1                    ## title PLAYERS: 1 (classic) or 2 (hotseat match, SPEC §19.2)
+var powerups := false               ## title POWER-UPS (SPEC §19.3)
 ## File of the options (tests point it to a scratch file so the player's settings stay untouched).
 var settings_path := SETTINGS_PATH
 ## File of the highscore lists (same: tests use a scratch file).
 var highscore_path := HIGHSCORE_PATH
 
-## difficulty id (0..3) → Array of entries {name, score, time, level, ship}
+## difficulty id (0..3) → Array of entries {name, score, time, level, ship}: classic runs …
 var _highscores := {0: [], 1: [], 2: [], 3: []}
+## … and runs with POWER-UPS on (SPEC §19.3).
+var _highscores_pu := {0: [], 1: [], 2: [], 3: []}
 
 
 func _ready() -> void:
@@ -62,11 +71,16 @@ func load_settings() -> void:
 	display_mode = clean_display_mode(cfg.get_value("video", "display_mode", 0))
 	var chosen: Variant = cfg.get_value("video", "display_chosen", false)
 	display_chosen = chosen is bool and chosen
+	players = clean_players(cfg.get_value("game", "players", 1))
+	var pu: Variant = cfg.get_value("game", "powerups", false)
+	powerups = pu is bool and pu
 
 
 func save_settings() -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("game", "difficulty", difficulty)
+	cfg.set_value("game", "players", players)
+	cfg.set_value("game", "powerups", powerups)
 	cfg.set_value("audio", "music_on", music_on)
 	cfg.set_value("audio", "sfx_on", sfx_on)
 	cfg.set_value("audio", "music_volume", music_volume)
@@ -81,6 +95,25 @@ func set_difficulty(value: int) -> void:
 	difficulty = posmod(value, 4)
 	save_settings()
 	changed.emit()
+
+
+## PLAYERS of the title (1 / 2; anything else → 1).
+func set_players(value: int) -> void:
+	players = clean_players(value)
+	save_settings()
+	changed.emit()
+
+
+## POWER-UPS of the title.
+func set_powerups(value: bool) -> void:
+	powerups = value
+	save_settings()
+	changed.emit()
+
+
+## A stored PLAYERS value: 2 (also the float 2.0) or else 1.
+static func clean_players(value: Variant) -> int:
+	return 2 if (value is int or value is float) and float(value) == 2.0 else 1
 
 
 func set_music_on(value: bool) -> void:
@@ -182,45 +215,60 @@ func load_highscores() -> void:
 	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(highscore_path))
 	if not (data is Dictionary):
 		return
-	for d in 4:
-		var list: Array = []
-		for e in data.get(str(d), []):
-			if e is Dictionary:
-				list.append(_clean_entry(e))
-		sort_entries(list)
-		_highscores[d] = list.slice(0, LIST_SIZE)
+	for pu in [false, true]:
+		for d in 4:
+			var list: Array = []
+			var raw: Variant = data.get(list_key(d, pu), [])
+			if raw is Array:
+				for e in raw:
+					if e is Dictionary:
+						list.append(_clean_entry(e))
+			sort_entries(list)
+			_lists(pu)[d] = list.slice(0, LIST_SIZE)
 
 
 func save_highscores() -> void:
 	var out := {}
-	for d in 4:
-		out[str(d)] = _highscores[d]
+	for pu in [false, true]:
+		for d in 4:
+			out[list_key(d, pu)] = _lists(pu)[d]
 	var f := FileAccess.open(highscore_path, FileAccess.WRITE)
 	if f:
 		f.store_string(JSON.stringify(out, "  ", false, true))
 
 
-func get_highscores(diff: int) -> Array:
-	return (_highscores[clampi(diff, 0, 3)] as Array).duplicate(true)
+## JSON key of a list: "0" … "3" (classic), "p0" … "p3" (power-ups).
+static func list_key(diff: int, p_powerups: bool) -> String:
+	return ("p%d" if p_powerups else "%d") % clampi(diff, 0, 3)
 
 
-## True if an entry with this score/time would enter the top 10 of that difficulty.
-func qualifies(diff: int, score: int, time: float) -> bool:
-	var list: Array = _highscores[clampi(diff, 0, 3)]
+func _lists(p_powerups: bool) -> Dictionary:
+	return _highscores_pu if p_powerups else _highscores
+
+
+## The top 10 of a difficulty – classic, or with p_powerups the power-up list.
+func get_highscores(diff: int, p_powerups: bool = false) -> Array:
+	return (_lists(p_powerups)[clampi(diff, 0, 3)] as Array).duplicate(true)
+
+
+## True if an entry with this score/time would enter the top 10 of that difficulty (and power-up setting).
+func qualifies(diff: int, score: int, time: float, p_powerups: bool = false) -> bool:
+	var list: Array = _lists(p_powerups)[clampi(diff, 0, 3)]
 	if list.size() < LIST_SIZE:
 		return true
 	return _better({"score": score, "time": time}, list[list.size() - 1])
 
 
 ## Inserts an entry, persists and returns its rank index (0-based) or -1 if it did not qualify.
-func insert_highscore(diff: int, entry: Dictionary) -> int:
+func insert_highscore(diff: int, entry: Dictionary, p_powerups: bool = false) -> int:
 	diff = clampi(diff, 0, 3)
 	var e := _clean_entry(entry)
-	var list: Array = _highscores[diff]
+	var lists := _lists(p_powerups)
+	var list: Array = lists[diff]
 	list.append(e)
 	sort_entries(list)
 	var rank := list.find(e)
-	_highscores[diff] = list.slice(0, LIST_SIZE)
+	lists[diff] = list.slice(0, LIST_SIZE)
 	if rank >= LIST_SIZE:
 		return -1
 	save_highscores()

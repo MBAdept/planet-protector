@@ -16,6 +16,14 @@ const COLOR_PANEL := Color(0.025, 0.035, 0.085)
 const COLOR_BORDER := Color(0.4, 0.6, 1.0)
 ## Segments of a volume bar (one per 10 %).
 const VOLUME_SEGMENTS := 10
+## Player colours of a two-player match (SPEC §19.2): PLAYER 1 cyan, PLAYER 2 pink.
+const COLOR_P1 := Color(0.35, 0.85, 1.0)
+const COLOR_P2 := Color(1.0, 0.47, 0.74)
+
+
+## Colour of player k (0 = PLAYER 1, 1 = PLAYER 2).
+static func player_color(k: int) -> Color:
+	return COLOR_P2 if k == 1 else COLOR_P1
 
 static var _styles := {}
 

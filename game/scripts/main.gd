@@ -33,6 +33,10 @@ const SCREEN_SCRIPTS := {
 	"name_entry": preload("res://scripts/screens/name_entry_screen.gd"),
 	"highscores": preload("res://scripts/screens/highscores_screen.gd"),
 	"display_select": preload("res://scripts/screens/display_select_screen.gd"),
+	"ship_lock": preload("res://scripts/screens/ship_lock_screen.gd"),
+	"handover": preload("res://scripts/screens/handover_screen.gd"),
+	"lock_reveal": preload("res://scripts/screens/lock_reveal_screen.gd"),
+	"match_result": preload("res://scripts/screens/match_result_screen.gd"),
 }
 
 var _screen: Node = null
@@ -100,7 +104,7 @@ func _go(st: Dictionary, extra: Dictionary = {}) -> void:
 		"attract":
 			_start_attract()
 		"ship_select":
-			_open("ship_select", {"ship": Run.ship_id})
+			_open("ship_select", _merge({"ship": Run.ship_id}, extra))
 		"interlevel", "arrival", "bonus_result", "mars_rules":
 			_open(screen_name, _merge({"level": _level}, extra))
 		"victory", "game_over":
@@ -112,6 +116,8 @@ func _go(st: Dictionary, extra: Dictionary = {}) -> void:
 				"level": Run.level, "ship": Run.ship_id}, extra))
 		"highscores":
 			_open("highscores", _merge({"difficulty": Settings.difficulty}, extra))
+		"ship_lock", "handover", "lock_reveal", "match_result":
+			_open(screen_name, extra)
 		_:
 			push_warning("Main: unknown screen '%s'" % screen_name)
 			_open("title")
@@ -253,6 +259,28 @@ func _open_dev_screen(screen_name: String) -> void:
 			Run.active = false
 			_go(RunFlow.step(screen_name))
 			return
+		"ship_lock", "handover", "lock_reveal", "match_result":
+			# Two-player screens (SPEC §19.2): a fake match – PLAYER 1 may not fly 4 / 5, PLAYER 2 not 0.
+			var locks := [[4, 5], [0]]
+			Run.start_match(diff, [ship, posmod(ship + 3, ShipData.SHIPS.size())], locks, lvl, _args.has("powerups"))
+			Run.score = 1000 + lvl * 1234
+			Run.active_time = 41.7 * lvl + 12.3
+			Run.switch_to(1)
+			Run.score = 800 + lvl * 1111
+			Run.active_time = 44.2 * lvl + 3.1
+			Run.lives = 1
+			Run.switch_to(0)
+			var p := RunFlow.arg_int(_args, "player", 0, 0, 1)
+			var extra := {}
+			match screen_name:
+				"ship_lock":
+					extra = {"player": p, "locked": []}
+				"handover":
+					extra = {"kind": String(_args.get("kind", "turn")), "player": p, "level": lvl}
+				"lock_reveal":
+					extra = {"locked": locks}
+			_go(RunFlow.step(screen_name, lvl), extra)
+			return
 		"title", "ship_select":
 			Run.active = false
 			Run.score = 0
@@ -263,6 +291,10 @@ func _open_dev_screen(screen_name: String) -> void:
 				extra["select"] = String(_args["select"])
 			if screen_name == "title" and _args.has("pending-display"):
 				extra["display_pending"] = RunFlow.arg_int(_args, "pending-display", 0, 0, Display.MODE_COUNT - 1)
+			if screen_name == "ship_select" and RunFlow.arg_int(_args, "players", 1, 1, 2) == 2:
+				# Two-player look (SPEC §19.2): --player=0|1 chooses, ships 4 / 5 locked for PLAYER 1, ship 0 for PLAYER 2.
+				var p := RunFlow.arg_int(_args, "player", 0, 0, 1)
+				extra = {"player": p, "locked": [4, 5] if p == 0 else [0]}
 			_go(RunFlow.step(screen_name), extra)
 		"highscores":
 			var extra := {"difficulty": diff}
