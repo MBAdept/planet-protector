@@ -3,6 +3,10 @@ extends ScreenBase
 ## awarded), score, total play time and the progress line (LevelData.progress_text). Confirm continues;
 ## confirm is ignored during the first 0.6 s. finished: "continue".
 ## setup args: {"level": n} (defaults to Run.last_level_result.level / Run.level).
+## Two players (SPEC §19.2): also {"player": k, "next_player": j (−1 = none), "next_screen": <RunFlow screen name>}:
+## a "PLAYER k" label in the player colour above the title; while the other player still has to play this level the
+## progress line reads "Next: PLAYER j – LEVEL n" in j's colour (else the usual progress text). The confirm sound
+## follows the real next screen (silent only when the arrival comes next, i.e. after the round's last turn).
 
 const CONFIRM_DELAY := 0.6
 const PLANET_POS := Vector2(890, 700)   ## lower right corner (16:9: + ox, the same distance from the edge)
@@ -11,10 +15,15 @@ const PANEL_TOP := 232.0
 const PANEL_W := 460.0
 const ROW_H := 44.0
 const PROGRESS_SIZE := 22
+## Baseline of the "PLAYER k" label (two players) above the title.
+const PLAYER_LABEL_Y := 96.0
 
 var _n := 1
 var _bonus := 0
 var _extra_life := false
+var _player := -1
+var _next_player := -1
+var _next_screen := ""
 
 
 func _enter() -> void:
@@ -23,11 +32,14 @@ func _enter() -> void:
 	_n = int(args.get("level", res.get("level", Run.level)))
 	_bonus = int(res.get("completion_bonus", LevelData.level(_n)["bonus"]))
 	_extra_life = bool(res.get("extra_life", false))
+	_player = int(args.get("player", -1))
+	_next_player = int(args.get("next_player", -1))
+	_next_screen = String(args.get("next_screen", ""))
 
 
 func _tick(_delta: float) -> void:
 	if time >= CONFIRM_DELAY and InputRouter.confirm_pressed():
-		var snd := confirm_sound(_n)
+		var snd := confirm_sound(_n, _next_screen)
 		if snd != "":
 			sfx(snd)
 		finish("continue")
@@ -44,9 +56,19 @@ static func progress_baseline(rows: int) -> float:
 
 
 ## Sound for confirming the interlevel of level n: none when an arrival sequence follows, because the
-## arrival is completely silent (SPEC §11/§14) and a confirm sound would ring on into it.
-static func confirm_sound(n: int) -> String:
-	return "" if RunFlow.next("interlevel", "continue", n)["screen"] == "arrival" else "menu_confirm"
+## arrival is completely silent (SPEC §11/§14) and a confirm sound would ring on into it. next_screen: the screen
+## that really follows (a match: the other player's TURN screen comes first); "" = the one-player flow.
+static func confirm_sound(n: int, next_screen: String = "") -> String:
+	var nxt := next_screen if next_screen != "" else String(RunFlow.next("interlevel", "continue", n)["screen"])
+	return "" if nxt == "arrival" else "menu_confirm"
+
+
+## Progress line: "Next: PLAYER 2 – LEVEL n" while that player still has to play level n (−1: the usual
+## LevelData.progress_text).
+static func progress_line(n: int, next_player: int) -> String:
+	if next_player >= 0:
+		return "Next: %s – LEVEL %d" % [Run.player_label(next_player), n]
+	return LevelData.progress_text(n)
 
 
 func _draw() -> void:
@@ -58,6 +80,9 @@ func _draw() -> void:
 		Color(1, 1, 1, pa))
 	draw_rect(full_rect(), Color(0, 0, 0, 0.18))
 	var a := ramp(0.0, 0.35)
+	if _player >= 0:
+		UiKit.text_spaced(self, Assets.font_title, Vector2(CX, PLAYER_LABEL_Y), Run.player_label(_player), 20, 6.0,
+			Color(UiKit.player_color(_player), a), HORIZONTAL_ALIGNMENT_CENTER)
 	draw_title("LEVEL %d COMPLETE" % _n, 150, 42, Color(UiKit.COLOR_TEXT, a))
 	UiKit.text_spaced(self, Assets.font_title, Vector2(CX, 190), String(LevelData.level(_n)["name"]).to_upper(), 17,
 		4.0, Color(UiKit.COLOR_HILITE, a), HORIZONTAL_ALIGNMENT_CENTER)
@@ -89,11 +114,14 @@ func _draw() -> void:
 				HORIZONTAL_ALIGNMENT_RIGHT)
 		if i < rows.size() - 1:
 			UiKit.divider(self, Vector2(CX, top + 18.0 + row_h * (i + 1)), pw - 60, Color(UiKit.COLOR_BORDER, 0.16 * ra), 1.0)
-	# Progress line ("2 more battles until Uranus" / "Neptune secured!")
+	# Progress line ("2 more battles until Uranus" / "Neptune secured!" / two players: "Next: PLAYER 2 – LEVEL 5")
 	var pa2 := ramp(0.45, 0.4)
 	var secured := LevelData.ARRIVAL_AFTER.has(_n) or _n >= LevelData.LAST_LEVEL
-	UiKit.text_glow(self, Assets.font_title, Vector2(CX, progress_baseline(rows.size())), LevelData.progress_text(_n),
-		PROGRESS_SIZE,
-		Color(UiKit.COLOR_GOLD if secured else UiKit.COLOR_ACCENT, pa2), UiKit.COLOR_ACCENT,
-		HORIZONTAL_ALIGNMENT_CENTER, 0.7 * pa2)
+	var pc := UiKit.COLOR_GOLD if secured else UiKit.COLOR_ACCENT
+	var glow := UiKit.COLOR_ACCENT
+	if _next_player >= 0:
+		pc = UiKit.player_color(_next_player)
+		glow = pc
+	UiKit.text_glow(self, Assets.font_title, Vector2(CX, progress_baseline(rows.size())), progress_line(_n, _next_player),
+		PROGRESS_SIZE, Color(pc, pa2), glow, HORIZONTAL_ALIGNMENT_CENTER, 0.7 * pa2)
 	draw_continue_hint("Continue", CONFIRM_DELAY)

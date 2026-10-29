@@ -2,9 +2,15 @@ extends ScreenBase
 ## Result of the bonus level 13 (docs/SPEC.md §10, §11): remaining attempts, ship factor, bonus and
 ## "EXTRA LIFE!" if awarded (Run.last_bonus_result). No planet counter. Stays until confirm.
 ## finished: "continue".
+## Two players (SPEC §19.2): setup {"player": k, "next_player": j (−1 = none)} – a "PLAYER k" label in the player
+## colour above the title and, while the other player still has to play the bonus round, "Next: PLAYER j – LEVEL 13".
 
+const InterlevelScreen := preload("res://scripts/screens/interlevel_screen.gd")
 const CONFIRM_DELAY := 0.6
 const COUNT_TIME := 1.3
+## Baselines of the two-player lines: "PLAYER k" above the title, "Next: …" between the stats and the hint.
+const PLAYER_LABEL_Y := 62.0
+const NEXT_Y := 638.0
 
 var _remaining := 0
 var _factor := 0
@@ -13,10 +19,14 @@ var _extra := false
 var _shown := 0          # currently displayed (counting) bonus
 var _tick_acc := 0.0
 var _skip := false
+var _player := -1
+var _next_player := -1
 
 
 func _enter() -> void:
 	AudioManager.stop_music()
+	_player = int(args.get("player", -1))
+	_next_player = int(args.get("next_player", -1))
 	var r: Dictionary = Run.last_bonus_result
 	_factor = int(r.get("factor", ShipData.ship(Run.ship_id)["bonus_factor"]))
 	_remaining = int(r.get("remaining", 0))
@@ -53,6 +63,9 @@ func _draw() -> void:
 	var a := ramp(0.0, 0.35)
 	# Mars in the lower left corner (16:9: the same distance from the canvas edge).
 	Assets.draw_planet(self, "mars", Vector2(150.0 - ox, 610), 380.0, Color(1, 1, 1, 0.42 * ramp(0.0, 0.8)))
+	if _player >= 0:
+		UiKit.text_spaced(self, Assets.font_title, Vector2(CX, PLAYER_LABEL_Y), Run.player_label(_player), 20, 6.0,
+			Color(UiKit.player_color(_player), a), HORIZONTAL_ALIGNMENT_CENTER)
 	draw_title("BONUS ROUND COMPLETE", 112, 36, Color(UiKit.COLOR_TEXT, a), UiKit.COLOR_ACCENT)
 	UiKit.text(self, Assets.font_body, Vector2(CX, 152), LevelData.BONUS_TITLE, 21, Color(UiKit.COLOR_ACCENT, a),
 		HORIZONTAL_ALIGNMENT_CENTER)
@@ -87,4 +100,9 @@ func _draw() -> void:
 		Color(UiKit.COLOR_DIM, a), Color(UiKit.COLOR_TEXT, a))
 	UiKit.stat_row(self, CX - 200, CX + 200, 584, "TOTAL TIME", Fmt.time(Run.active_time), 20,
 		Color(UiKit.COLOR_DIM, a), Color(UiKit.COLOR_TEXT, a))
+	if _next_player >= 0:
+		var na := ramp(0.45, 0.4)
+		var nc := UiKit.player_color(_next_player)
+		UiKit.text_glow(self, Assets.font_title, Vector2(CX, NEXT_Y), InterlevelScreen.progress_line(
+			LevelData.BONUS_LEVEL, _next_player), 22, Color(nc, na), nc, HORIZONTAL_ALIGNMENT_CENTER, 0.7 * na)
 	draw_continue_hint("Continue", CONFIRM_DELAY)
