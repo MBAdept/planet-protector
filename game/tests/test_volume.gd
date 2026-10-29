@@ -384,8 +384,9 @@ func test_arrival_silent_and_volume_restored_with_custom_volume() -> void:
 
 # --- §11 title menu ---------------------------------------------------------------------------------
 func test_title_items_order_and_existing_items_unchanged() -> void:
-	check_eq(TitleScreen.ITEMS, ["start", "difficulty", "music", "music_volume", "sfx", "sfx_volume", "display",
-		"highscores", "quit"] as Array[String], "9 items, volumes directly under MUSIC / SOUND EFFECTS, then DISPLAY")
+	check_eq(TitleScreen.ITEMS, ["start", "difficulty", "players", "powerups", "music", "music_volume", "sfx",
+		"sfx_volume", "display", "highscores", "quit"] as Array[String],
+		"11 items: PLAYERS / POWER-UPS under DIFFICULTY, volumes directly under MUSIC / SOUND EFFECTS, then DISPLAY")
 	check_eq(TitleScreen.LABELS["music_volume"], "MUSIC VOLUME")
 	check_eq(TitleScreen.LABELS["sfx_volume"], "EFFECTS VOLUME")
 	for item in ["music_volume", "sfx_volume", "difficulty"]:
@@ -394,7 +395,7 @@ func test_title_items_order_and_existing_items_unchanged() -> void:
 		check(not TitleScreen.accepts_step(item, true), "%s still flips once per press" % item)
 	_settings_begin()
 	_router_init()
-	# Up/down walks through all 9 rows (wrapping) – the volume rows are ordinary stops.
+	# Up/down walks through all 11 rows (wrapping) – the volume rows are ordinary stops.
 	var t := _title("start")
 	var seen: Array[String] = []
 	for i in TitleScreen.ITEMS.size():
@@ -520,7 +521,8 @@ func test_title_volume_with_controller() -> void:
 	_settings_end()
 
 
-## Layout at 960 × 720 with 9 rows: tagline above the panel, panel above the hints, labels clear of the bars.
+## Layout at 960 × 720 with 11 rows (two-player round): tagline above the panel, panel above the hints, labels clear of
+## the bars.
 func test_title_layout_fits() -> void:
 	if Assets.font_title == null:
 		Assets._ready()

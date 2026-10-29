@@ -1,8 +1,13 @@
 extends ScreenBase
-## Title screen (docs/SPEC.md §11, §12): logo, menu START GAME / DIFFICULTY / MUSIC / MUSIC VOLUME /
-## SOUND EFFECTS / EFFECTS VOLUME / DISPLAY / HIGHSCORES / QUIT. Up/down selects, left/right changes values,
-## confirm activates. Keyboard: Enter/Space confirm, Escape quits. Controller: A/X/Y/Start confirm, Select/Back →
-## highscores, B is ignored. Options persist via Settings and act immediately.
+## Title screen (docs/SPEC.md §11, §12): logo, menu START GAME / DIFFICULTY / PLAYERS / POWER-UPS / MUSIC /
+## MUSIC VOLUME / SOUND EFFECTS / EFFECTS VOLUME / DISPLAY / HIGHSCORES / QUIT. Up/down selects, left/right changes
+## values, confirm activates. Keyboard: Enter/Space confirm, Escape quits. Controller: A/X/Y/Start confirm,
+## Select/Back → highscores, B is ignored. Options persist via Settings and act immediately.
+## PLAYERS (1 / 2) and POWER-UPS (OFF / ON) (SPEC §19, client request, forum round): binary like the ON/OFF rows
+## (left/right/confirm flip once per press, never on the auto-repeat) → Settings.set_players / set_powerups; START
+## stays finished("start") (Main branches on Settings.players). The line under the menu explains the selected row,
+## and the BEST line shows the best entry of the selected difficulty AND power-up category (power-up runs have their
+## own lists, SPEC §19.3: "BEST · NORMAL · POWER-UPS").
 ## DISPLAY (widescreen round): left/right (or confirm) picks a PENDING mode out of Display.MODE_NAMES (shown as
 ## Display.menu_name: the Steam Deck mode without its "STEAM DECK" suffix, which the line under the menu carries) – shown in
 ## the highlight colour with "Press ENTER to apply" below the menu; confirm applies it (Display.choose: stored,
@@ -21,25 +26,38 @@ extends ScreenBase
 
 const GAME_TITLE := "PLANET PROTECTOR"
 const TAGLINE := "DEFEND THE SOLAR SYSTEM"
-const ITEMS: Array[String] = ["start", "difficulty", "music", "music_volume", "sfx", "sfx_volume", "display",
-	"highscores", "quit"]
-const LABELS := {"start": "START GAME", "difficulty": "DIFFICULTY", "music": "MUSIC", "music_volume": "MUSIC VOLUME",
-	"sfx": "SOUND EFFECTS", "sfx_volume": "EFFECTS VOLUME", "display": "DISPLAY", "highscores": "HIGHSCORES",
-	"quit": "QUIT"}
-## Binary ON/OFF items (left/right flips them).
-const TOGGLES: Array[String] = ["music", "sfx"]
+const ITEMS: Array[String] = ["start", "difficulty", "players", "powerups", "music", "music_volume", "sfx",
+	"sfx_volume", "display", "highscores", "quit"]
+const LABELS := {"start": "START GAME", "difficulty": "DIFFICULTY", "players": "PLAYERS", "powerups": "POWER-UPS",
+	"music": "MUSIC", "music_volume": "MUSIC VOLUME", "sfx": "SOUND EFFECTS", "sfx_volume": "EFFECTS VOLUME",
+	"display": "DISPLAY", "highscores": "HIGHSCORES", "quit": "QUIT"}
+## Binary items (PLAYERS 1 / 2 and the ON/OFF options): left/right flips them.
+const TOGGLES: Array[String] = ["players", "powerups", "music", "sfx"]
 # Layout (content coordinates, 960 × 720 – centred on the 1280 / 1152 px wide canvas of modes 1–4): logo + tagline
-# on top, the 9-row menu panel (wide enough for the longest DISPLAY value), the DISPLAY line under it, the two
-# hint rows at the bottom.
-const LOGO_W := 600.0
-const LOGO_Y := 128.0           ## the letters start below the BEST line in the top-right corner
-const MENU_Y := 270.0
-const MENU_STEP := 38.0
+# on top, the 11-row menu panel (wide enough for the longest DISPLAY value), the explanation line under it, the two
+# hint rows at the bottom. Two-player round: 11 rows instead of 9, so the logo is a little smaller (600 → 540 px) and
+# the rows a little closer (38 → 33 px, font 19 → 18); nothing overlaps in any display mode (tests/test_volume.gd,
+# test_display.gd, test_steamdeck.gd, test_hotseat_screens.gd).
+const LOGO_W := 540.0
+const LOGO_Y := 122.0           ## the letters start below the BEST line in the top-right corner
+const MENU_Y := 253.0
+const MENU_STEP := 33.0
 const MENU_W := 560.0
-const MENU_FONT := 19
-const MENU_PAD := 29.0          ## panel margin above the first / below the last row centre
-const DISPLAY_LINE_Y := 630.0   ## baseline of "Press ENTER to apply" / the mode explanation (DISPLAY row)
-const HINT_Y := 664.0
+const MENU_FONT := 18
+const MENU_PAD := 25.0          ## panel margin above the first / below the last row centre
+const INFO_LINE_Y := 636.0      ## baseline of the line under the menu: DISPLAY ("Press ENTER to apply" / the mode
+                                ## explanation), PLAYERS / POWER-UPS (what the selected value means)
+const HINT_Y := 665.0
+const HINT_STEP := 29.0         ## second hint row below the first
+## Line under the menu for the PLAYERS / POWER-UPS rows (what the selected value means).
+const PLAYERS_INFO := {
+	1: "Solo run  ·  choose 2 for a hotseat match on one controller",
+	2: "Hotseat match: take turns level by level and lock ships for each other",
+}
+const POWERUPS_INFO := {
+	false: "Classic rules  ·  ON: one power-up per level on Saturn, Jupiter and Mars",
+	true: "Once per level: Saturn RAPID FIRE  ·  Jupiter TWIN  ·  Mars SHIELD  ·  own highscore lists",
+}
 const BEST_X := W - 26.0        ## right edge of the BEST line in 4:3 (16:9: + ox, at the canvas edge)
 const BEST_SIZE := 18
 
@@ -66,8 +84,9 @@ func _enter() -> void:
 	_refresh_best()
 
 
+## Best entry of the selected difficulty in the selected category (classic / power-ups list, SPEC §19.3).
 func _refresh_best() -> void:
-	var list := Settings.get_highscores(Settings.difficulty)
+	var list := Settings.get_highscores(Settings.difficulty, Settings.powerups)
 	_best = list[0] if not list.is_empty() else args.get("preview_best", {})
 
 
@@ -151,8 +170,8 @@ func _update_idle(delta: float) -> bool:
 	return idle >= _attract_after
 
 
-## ON/OFF options flip once per press: auto-repeat steps of a held direction are ignored for them
-## (otherwise holding Left/Right would flicker the setting and rewrite settings.cfg ~9x per second).
+## Binary options (ON/OFF, PLAYERS 1 / 2) flip once per press: auto-repeat steps of a held direction are ignored
+## for them (otherwise holding Left/Right would flicker the setting and rewrite settings.cfg ~9x per second).
 ## DIFFICULTY keeps cycling and the volumes keep stepping (clamped at 0 % / 100 %) with the controlled repeat.
 static func accepts_step(item: String, is_repeat: bool) -> bool:
 	return not (is_repeat and TOGGLES.has(item))
@@ -163,6 +182,13 @@ func _change(item: String, step: int) -> void:
 		"difficulty":
 			Settings.set_difficulty(Settings.difficulty + step)
 			_refresh_best()
+			sfx("menu_move")
+		"players":
+			Settings.set_players(1 if Settings.players == 2 else 2)
+			sfx("menu_move")
+		"powerups":
+			Settings.set_powerups(not Settings.powerups)
+			_refresh_best()   # the BEST line follows the category
 			sfx("menu_move")
 		"music":
 			Settings.set_music_on(not Settings.music_on)
@@ -229,6 +255,10 @@ func _value(item: String) -> String:
 	match item:
 		"difficulty":
 			return String(ShipData.difficulty(Settings.difficulty)["name"])
+		"players":
+			return str(Settings.players)
+		"powerups":
+			return "ON" if Settings.powerups else "OFF"
 		"music":
 			return "ON" if Settings.music_on else "OFF"
 		"sfx":
@@ -257,22 +287,36 @@ func _draw() -> void:
 				UiKit.COLOR_HILITE.lerp(Color.WHITE, 0.25 * pulse))
 		else:
 			UiKit.menu_item(self, c, LABELS[item], _value(item), selected, time, MENU_W, MENU_FONT)
-	_draw_display_line()
+	_draw_info_line()
 	_draw_best()
 	_draw_hints()
 
 
-## Under the menu while DISPLAY is selected: "Press ENTER to apply" for a pending mode, else what the mode is.
-func _draw_display_line() -> void:
-	if ITEMS[_sel] != "display":
-		return
-	if display_is_pending():
+## Line under the menu: on DISPLAY "Press ENTER to apply" for a pending mode, else what the mode is; on PLAYERS /
+## POWER-UPS what the selected value means (info_line_text); nothing on the other rows.
+func _draw_info_line() -> void:
+	var item := ITEMS[_sel]
+	if item == "display" and display_is_pending():
 		var a := 0.75 + 0.25 * sin(time * 5.0)
-		UiKit.text_glow(self, Assets.font_body_bold, Vector2(CX, DISPLAY_LINE_Y), display_line_text(true), 16,
+		UiKit.text_glow(self, Assets.font_body_bold, Vector2(CX, INFO_LINE_Y), display_line_text(true), 16,
 			Color(UiKit.COLOR_HILITE, a), UiKit.COLOR_HILITE, HORIZONTAL_ALIGNMENT_CENTER, 0.6)
-	else:
-		UiKit.text(self, Assets.font_body, Vector2(CX, DISPLAY_LINE_Y), display_line_text(false), 15, UiKit.COLOR_DIM,
-			HORIZONTAL_ALIGNMENT_CENTER)
+		return
+	var s := info_line_text(item)
+	if s != "":
+		UiKit.text(self, Assets.font_body, Vector2(CX, INFO_LINE_Y), s, 15, UiKit.COLOR_DIM, HORIZONTAL_ALIGNMENT_CENTER)
+
+
+## Explanation under the menu for a row (without a pending DISPLAY choice): DISPLAY → display_line_text(false),
+## PLAYERS / POWER-UPS → PLAYERS_INFO / POWERUPS_INFO of the current value; "" for every other row.
+func info_line_text(item: String) -> String:
+	match item:
+		"display":
+			return display_line_text(false)
+		"players":
+			return String(PLAYERS_INFO[Settings.players])
+		"powerups":
+			return String(POWERUPS_INFO[Settings.powerups])
+	return ""
 
 
 ## Text of the DISPLAY line: the apply prompt for a pending mode, else the explanation of the shown mode. For a
@@ -296,7 +340,7 @@ func _draw_logo() -> void:
 	var float_y := sin(time * 0.9) * 3.0
 	var logo := Assets.logo_texture()
 	var center := Vector2(CX, LOGO_Y + float_y)
-	UiKit.glow_spot(self, center + Vector2(0, 8), Vector2(400, 128), Color(1.0, 0.35, 0.08, 0.13))
+	UiKit.glow_spot(self, center + Vector2(0, 8), Vector2(400, 128) * (LOGO_W / 600.0), Color(1.0, 0.35, 0.08, 0.13))
 	var bottom := 0.0
 	if logo:
 		var w := LOGO_W
@@ -326,13 +370,18 @@ static func best_text(entry: Dictionary) -> String:
 	return "%s  %s" % [entry["name"], Fmt.score(int(entry["score"]))]
 
 
+## Caption of the BEST line: "BEST · NORMAL" (classic list) / "BEST · NORMAL · POWER-UPS" (power-up list, SPEC §19.3).
+static func best_caption(diff: int, p_powerups: bool) -> String:
+	var s := "BEST · %s" % String(ShipData.difficulty(diff)["name"])
+	return s + " · POWER-UPS" if p_powerups else s
+
+
 func _draw_best() -> void:
 	if _best.is_empty():
 		return
-	var diff_name := String(ShipData.difficulty(Settings.difficulty)["name"])
 	var bx := BEST_X + ox   # at the right edge of the canvas
-	UiKit.text(self, Assets.font_body, Vector2(bx, 32), "BEST · %s" % diff_name, UiKit.label_size(13), UiKit.COLOR_FAINT,
-		HORIZONTAL_ALIGNMENT_RIGHT)
+	UiKit.text(self, Assets.font_body, Vector2(bx, 32), best_caption(Settings.difficulty, Settings.powerups),
+		UiKit.label_size(13), UiKit.COLOR_FAINT, HORIZONTAL_ALIGNMENT_RIGHT)
 	UiKit.text(self, Assets.font_title, Vector2(bx, 56), best_text(_best), BEST_SIZE, UiKit.COLOR_GOLD,
 		HORIZONTAL_ALIGNMENT_RIGHT)
 
@@ -341,6 +390,6 @@ func _draw_hints() -> void:
 	UiKit.hint_bar(self, Vector2(CX, HINT_Y), [
 		[["UD"], "Select"], [["LR"], "Change"], [["ENTER", "pad:A"], "Confirm"],
 	], 14)
-	UiKit.hint_bar(self, Vector2(CX, HINT_Y + 29.0), [
+	UiKit.hint_bar(self, Vector2(CX, HINT_Y + HINT_STEP), [
 		[["pad:BACK"], "Highscores"], [["ESC"], "Quit"], [["F11"], "Fullscreen"],
 	], 13, UiKit.COLOR_FAINT)

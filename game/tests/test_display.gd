@@ -507,8 +507,8 @@ func test_title_layout_fits_both_canvases() -> void:
 	_fonts()
 	var font := Assets.font_title
 	var panel := TitleScreen.menu_panel_rect()
-	check(panel.end.y + 10.0 < TitleScreen.DISPLAY_LINE_Y - 16.0, "DISPLAY line below the menu panel")
-	check(TitleScreen.DISPLAY_LINE_Y + 6.0 < TitleScreen.HINT_Y - 14 * 1.55 * 0.5, "DISPLAY line above the hints")
+	check(panel.end.y + 10.0 < TitleScreen.INFO_LINE_Y - 16.0, "DISPLAY line below the menu panel")
+	check(TitleScreen.INFO_LINE_Y + 6.0 < TitleScreen.HINT_Y - 14 * 1.55 * 0.5, "DISPLAY line above the hints")
 	# The longest DISPLAY value fits its row next to the label, with the value pointers (selected row).
 	var c := Vector2(TitleScreen.CX, 300.0)
 	var row := UiKit.menu_row_rect(c, TitleScreen.MENU_W, TitleScreen.MENU_FONT)
