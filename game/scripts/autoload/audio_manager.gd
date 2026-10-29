@@ -29,7 +29,7 @@ const GAME_MUSIC_DIR := "res://assets/audio/music/game/"
 const SFX_DIR := "res://assets/audio/sfx/"
 const SFX_NAMES: Array[String] = ["shot_laser", "shot_rocket", "shot_blaster", "enemy_fire", "enemy_hit",
 	"enemy_explode", "locked_hit", "player_explode", "extra_life", "level_complete", "materialize", "menu_move",
-	"menu_confirm", "menu_back", "bonus_tick", "game_over"]
+	"menu_confirm", "menu_back", "bonus_tick", "game_over", "powerup_on", "powerup_off", "shield_hit"]
 
 # --- Sequencer timing: all integers at 44.1 kHz -> sample accurate --------------------------------
 const MIX_RATE := 44100
@@ -96,6 +96,10 @@ const SFX_TUNING := {
 	"menu_back": [0.0, 0.0, 2],
 	"bonus_tick": [0.0, 0.0, 1],
 	"game_over": [0.0, 0.0, 3],
+	# Power-ups (SPEC §19.3): trigger / end stingers, and the frequent fireball-on-shield zap.
+	"powerup_on": [0.0, 0.0, 3],
+	"powerup_off": [0.0, 0.0, 2],
+	"shield_hit": [0.0, 0.05, 1],
 }
 
 # --- Bass logic -----------------------------------------------------------------------------------

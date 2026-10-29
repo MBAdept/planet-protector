@@ -62,14 +62,16 @@ static func decide(w: GameWorld) -> Vector2:
 		if tgt == null or e.y > tgt.y + 1.0 or (absf(e.y - tgt.y) <= 1.0 and absf(e.x - px) < absf(tgt.x - px)):
 			tgt = e
 	var target_x := px
+	# The ship's own salvo in flight steers with the ship (a TWIN's shots follow the twin, SPEC §19.3).
+	var own := _own_shot(w)
 	if tgt != null:
 		var fly_from := LevelData.SALVO_Y
-		if guided and not w.shots.is_empty():
-			fly_from = w.shots[0].y
+		if guided and own != null:
+			fly_from = own.y
 		var t := maxf(fly_from - tgt.y, 0.0) / shot_speed
 		target_x = _predict_x(w, tgt, t)
-		if guided and not w.shots.is_empty():
-			target_x -= w.shots[0].offset
+		if guided and own != null:
+			target_x -= own.offset
 	else:
 		target_x = LevelData.player_start_x(w.width)
 	# Landing points of incoming fireballs (computed once). A slanted fireball sweeps sideways while it
@@ -102,6 +104,14 @@ static func decide(w: GameWorld) -> Vector2:
 		# Do not waste attempts: only shoot when the predicted intercept is inside the hit box.
 		fire = tgt != null and w.shots.is_empty() and absf(target_x - px) < LevelData.HIT_DX * tgt.scale * 0.6
 	return Vector2(axis, 1.0 if fire else 0.0)
+
+
+## The oldest projectile of the ship's own salvos in flight (not the TWIN's), or null.
+static func _own_shot(w: GameWorld) -> GameWorld.Shot:
+	for s in w.shots:
+		if not s.twin:
+			return s
+	return null
 
 
 ## Attract mode (AttractDirector): Vector2(move_axis, fire) like decide(), but played for the camera –

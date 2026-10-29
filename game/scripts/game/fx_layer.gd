@@ -6,6 +6,8 @@ extends Node2D
 ##   no particle state, nothing allocated per frame.
 ## - Small impulses (split / colour stage / locked / rolling hits, muzzle flashes, materialize beams,
 ##   respawn) are spawned from world events and age in game time.
+## - Power-ups (SPEC §19.3), in the power-up colour: a burst when one is triggered, a collapsing ring when it ends,
+##   the TWIN's materialize beam / vanish burst, and a flash where the SHIELD absorbs a fireball.
 ## - Score popups are drawn by a normal-blend child node.
 
 const FxTex := preload("res://scripts/game/fx_tex.gd")
@@ -63,10 +65,12 @@ func advance(game_dt: float) -> void:
 	_text.queue_redraw()
 
 
-## kind: "split", "stage", "locked", "rolling", "muzzle", "enemy_muzzle", "materialize", "respawn", "extra_life"
+## kind: "split", "stage", "locked", "rolling", "muzzle", "enemy_muzzle", "materialize", "respawn", "extra_life",
+## power-ups: "powerup_on", "powerup_off", "twin_in", "twin_out", "shield_hit"
 func impulse(kind: String, pos: Vector2, size: float = 1.0, color: Color = Color.WHITE) -> void:
 	var dur: float = {"split": 0.42, "stage": 0.5, "locked": 0.28, "rolling": 0.34, "muzzle": 0.1,
-		"enemy_muzzle": 0.14, "materialize": 0.55, "respawn": 0.6, "extra_life": 1.0}.get(kind, 0.3)
+		"enemy_muzzle": 0.14, "materialize": 0.55, "respawn": 0.6, "extra_life": 1.0, "powerup_on": 0.75,
+		"powerup_off": 0.55, "twin_in": 0.5, "twin_out": 0.55, "shield_hit": 0.32}.get(kind, 0.3)
 	_impulses.append({"kind": kind, "pos": pos, "scale": size, "color": color, "age": 0.0, "dur": dur,
 		"seed": randf() * 100.0})
 
@@ -252,6 +256,62 @@ func _draw_impulse(im: Dictionary) -> void:
 			var fa8 := sin(t * PI)
 			FxTex.draw_centered(self, FxTex.ring(), p, Vector2.ONE * (30.0 + 120.0 * _ease_out(t)) * 2.0, _ca(Color(0.5, 1.0, 0.6), 0.7 * (1.0 - t)))
 			FxTex.draw_centered(self, FxTex.glow(), p, Vector2(140, 100), _ca(Color(0.45, 1.0, 0.55), 0.4 * fa8))
+		"powerup_on":
+			# Burst around the ship: flash, two flat shock rings racing outwards, a light pillar, sparks.
+			var fa9 := 1.0 - t
+			var hi := col.lerp(Color.WHITE, 0.5)
+			FxTex.draw_centered(self, FxTex.glow(), p, Vector2(170, 120) * (0.7 + 0.3 * t), _ca(col, 0.6 * fa9 * fa9))
+			FxTex.draw_centered(self, FxTex.core(), p, Vector2(40, 30) * fa9, _ca(Color.WHITE, fa9 * fa9))
+			for k in 2:
+				var tk := clampf((t - 0.12 * k) / (1.0 - 0.12 * k), 0.0, 1.0)
+				if tk > 0.0:
+					var rr := (24.0 + 170.0 * _ease_out(tk)) * (1.0 - 0.3 * k)
+					FxTex.draw_centered(self, FxTex.ring(), p, Vector2(rr * 2.0, rr * 0.9), _ca(hi if k == 0 else col, 0.85 * pow(1.0 - tk, 1.3)))
+			FxTex.draw_quad(self, FxTex.glow(), p + Vector2(0, -70), Vector2(22.0 * fa9 + 6.0, 0), Vector2(0, 130.0), _ca(col, 0.45 * fa9))
+			_sparks(p, sd, t, im["dur"], 14, 340.0, col)
+		"powerup_off":
+			# The effect fades: a ring collapsing onto the ship, a last soft glow, a few falling embers.
+			var fa10 := 1.0 - t
+			FxTex.draw_centered(self, FxTex.ring(), p, Vector2(150.0, 100.0) * (1.0 - 0.75 * _ease_out(t)), _ca(col, 0.7 * fa10))
+			FxTex.draw_centered(self, FxTex.glow(), p, Vector2(110, 80), _ca(col, 0.35 * fa10 * fa10))
+			for i in 8:
+				var ang := -PI * (0.15 + 0.7 * _h(sd, float(i)))
+				var q := p + Vector2(cos(ang), sin(ang)) * (36.0 + 10.0 * _h(sd, float(i) + 4.0)) + Vector2(0, 46.0 * t * t)
+				FxTex.draw_centered(self, FxTex.core(), q, Vector2.ONE * 4.0 * fa10, _ca(col.lerp(Color.WHITE, 0.4), fa10))
+		"twin_in":
+			# The twin materializes: a scan beam narrowing onto it, a ring closing in, particles converging.
+			var fa11 := sin(t * PI)
+			var w2 := (70.0 - 50.0 * _ease_out(t))
+			FxTex.draw_quad(self, FxTex.glow(), p + Vector2(0, -50), Vector2(w2 * 0.5, 0), Vector2(0, 120.0), _ca(col, 0.5 * fa11))
+			FxTex.draw_centered(self, FxTex.ring(), p, Vector2(170.0, 96.0) * (1.0 - 0.6 * _ease_out(t)), _ca(col, 0.65 * fa11))
+			for i in 12:
+				var ang := TAU * _h(sd, float(i))
+				var dist := (80.0 + 30.0 * _h(sd, float(i) + 9.0)) * (1.0 - _ease_out(t))
+				var q := p + Vector2(cos(ang), sin(ang) * 0.5) * dist
+				FxTex.draw_centered(self, FxTex.core(), q, Vector2.ONE * 4.5, _ca(col.lerp(Color.WHITE, 0.45), fa11))
+		"twin_out":
+			# The twin dissolves: a flash, a ring bursting outwards, its particles flying apart and the beam fading.
+			var fa12 := 1.0 - t
+			FxTex.draw_centered(self, FxTex.glow(), p, Vector2(130, 96), _ca(col, 0.6 * fa12 * fa12))
+			FxTex.draw_centered(self, FxTex.ring(), p, Vector2(1.0, 0.6) * (30.0 + 130.0 * _ease_out(t)) * 2.0, _ca(col, 0.7 * fa12))
+			FxTex.draw_quad(self, FxTex.glow(), p + Vector2(0, -50), Vector2(16.0 * fa12 + 4.0, 0), Vector2(0, 120.0), _ca(col, 0.35 * fa12))
+			for i in 12:
+				var ang := TAU * _h(sd, float(i))
+				var q := p + Vector2(cos(ang), sin(ang) * 0.5) * (10.0 + 90.0 * _ease_out(t)) * (0.6 + 0.4 * _h(sd, float(i) + 3.0))
+				FxTex.draw_centered(self, FxTex.core(), q, Vector2.ONE * 4.5 * fa12, _ca(col.lerp(Color.WHITE, 0.45), fa12))
+		"shield_hit":
+			# A fireball dies on the shield: white-hot flash, a hexagonal ripple in the shield colour, deflected sparks.
+			var fa13 := pow(1.0 - t, 1.5)
+			FxTex.draw_centered(self, FxTex.core(), p, Vector2.ONE * 20.0 * fa13, _ca(Color.WHITE, fa13))
+			FxTex.draw_centered(self, FxTex.glow(), p, Vector2.ONE * 64.0, _ca(col, 0.75 * fa13))
+			FxTex.draw_centered(self, FxTex.glow(), p, Vector2.ONE * 30.0, _ca(Color(1.0, 0.55, 0.2), 0.6 * fa13))
+			var r2 := 10.0 + 18.0 * _ease_out(t)
+			var hex := PackedVector2Array()
+			for i in 7:
+				var a := TAU * float(i) / 6.0
+				hex.append(p + Vector2(cos(a), sin(a) * 0.8) * r2)
+			draw_polyline(hex, _ca(col.lerp(Color.WHITE, 0.3), 0.9 * fa13), 1.6, true)
+			_sparks(p, sd, t, im["dur"], 5, 200.0, col)
 
 
 func _sparks(p: Vector2, sd: float, t: float, dur: float, n: int, speed: float, col: Color) -> void:

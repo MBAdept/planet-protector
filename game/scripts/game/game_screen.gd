@@ -12,6 +12,10 @@ extends Node2D
 ## leak through). Fire is not guarded: a fire button held through the pause fires again at once (hold-to-fire).
 ## Playfield width (SPEC §18.1): the screen takes Display.logical_width() (960 in the classic 4:3 mode, 1280 in the
 ## 16:9 modes) at setup, gives it to the world (demo world included) and draws everything over that width.
+## Power-ups (SPEC §19.3): with Run.powerups the world gets LevelData.powerup_of(level) (a demo never has one); a
+## fresh press of the power-up button (InputRouter.powerup_pressed: Shift / Ctrl, pad X / Y / LB / RB) triggers it
+## – not in the pause, failed attempts are silent; the autoplay bot triggers it as soon as it can. The screen
+## draws the TWIN as a second (ghost) ship, the shield bubble and the rapid-fire glow, and plays the power-up sounds.
 
 signal finished(result: String, data: Dictionary)
 
@@ -64,6 +68,9 @@ var _enemy_nodes := {}             # enemy id → EnemyArt
 var _input_seen := false           # attract: a player input event arrived since the last frame
 var _move_guard := false           # after resuming: movement ignored until the held direction is released
 var _pause_dir_guard := false      # in the pause: auto-repeat of a direction held since before it is ignored
+var _powerup_end := -1.0           # real seconds since the power-up ended (−1 = not yet; HUD fade of USED)
+var _twin_vis := 0.0               # 0…1 fade of the twin ship (in on activation, out after it is gone)
+var _twin_bank := 0.0
 
 var _stars: Starfield
 var _root: Node2D
@@ -71,6 +78,7 @@ var _enemy_layer: Node2D
 var _fx: Node2D
 var _shots: Node2D
 var _player: Node2D
+var _twin: Node2D                  # TWIN power-up: the second ship (ghost look), null on other levels
 var _bullets: Node2D
 var _hud: Node2D
 
@@ -93,6 +101,7 @@ func _ready() -> void:
 		_build()
 		return
 	world = GameWorld.new(level, Run.difficulty, Run.ship_id, Run.lives, randi(), width)
+	world.powerup = LevelData.powerup_of(level) if Run.powerups else LevelData.PowerUp.NONE
 	world.invincible = Run.dev("invincible")
 	_base_score = Run.score
 	_base_time = Run.active_time
@@ -133,9 +142,19 @@ func _build() -> void:
 	_shots = ProjectilesView.new()
 	_shots.mode = ProjectilesView.Mode.SHOTS
 	_shots.world = world
+	_shots.twin_color = Hud.powerup_color(LevelData.PowerUp.TWIN)
 	_root.add_child(_shots)
+	if world.powerup == LevelData.PowerUp.TWIN:
+		# Behind the player's own ship, so the real one stays on top where they overlap.
+		_twin = PlayerView.new()
+		_twin.ship_id = world.ship_id
+		_twin.ghost = true
+		_twin.tint = Hud.powerup_color(LevelData.PowerUp.TWIN)
+		_twin.visible = false
+		_root.add_child(_twin)
 	_player = PlayerView.new()
 	_player.ship_id = world.ship_id
+	_player.tint = Hud.powerup_color(world.powerup)
 	_player.position = Vector2(world.player_x, LevelData.PLAYER_Y)
 	_root.add_child(_player)
 	# Enemy fireballs: clipped at the ground line – nothing (not even glow or tail) below y = 685.
@@ -190,10 +209,15 @@ func _process(delta: float) -> void:
 		var left := dt
 		while left > 1e-9:
 			var slice := minf(left, AUTOPLAY_SLICE)
+			# The bot triggers the power-up as soon as it can (dev flag manual_powerup: only on a press).
+			if not Run.dev("manual_powerup") and world.can_activate_powerup():
+				world.activate_powerup()
 			var d: Vector2 = Autopilot.decide(world)
 			world.update(slice, d.x, d.y > 0.5)
 			left -= slice
 	else:
+		if InputRouter.powerup_pressed():
+			world.activate_powerup()   # refused silently when not possible (SPEC §19.3)
 		world.update(dt, _move_axis(), InputRouter.fire_held())
 	var game_dt := dt * world.speed_factor if world.state != GameWorld.State.INTRO else 0.0
 	_last_axis = clampf((world.player_x - prev_x) / maxf(LevelData.PLAYER_SPEED * game_dt, 1e-6), -1.0, 1.0) if game_dt > 0.0 else 0.0
@@ -337,8 +361,10 @@ func _handle_events() -> void:
 			"shot_fired":
 				_sfx(String(ShipData.ship(int(ev["ship_id"]))["sfx"]))
 				var col := _muzzle_color()
+				# The TWIN's salvo leaves from the twin (SPEC §19.3).
+				var from_x := float(ev["x"]) if bool(ev.get("twin", false)) else world.player_x
 				for off in ShipData.shot_offsets(world.ship_id):
-					_fx.impulse("muzzle", Vector2(world.player_x + off, LevelData.SALVO_Y), 1.0, col)
+					_fx.impulse("muzzle", Vector2(from_x + off, LevelData.SALVO_Y), 1.0, col)
 			"enemy_fire":
 				_sfx("enemy_fire", -2.0, randf_range(0.95, 1.05))
 				_fx.impulse("enemy_muzzle", Vector2(ev["x"], ev["y"]), 1.0)
@@ -393,6 +419,23 @@ func _handle_events() -> void:
 				_sfx("level_complete")
 				if sound:
 					audio.stop_music()
+			"powerup_activated":
+				var kind := int(ev["kind"])
+				var pcol := Hud.powerup_color(kind)
+				_sfx("powerup_on")
+				_fx.impulse("powerup_on", Vector2(ev["x"], LevelData.PLAYER_Y), 1.0, pcol)
+				if kind == LevelData.PowerUp.TWIN:
+					_fx.impulse("twin_in", Vector2(ev["x"], LevelData.PLAYER_Y), 1.0, pcol)
+			"powerup_expired":
+				var kind2 := int(ev["kind"])
+				_powerup_end = 0.0
+				_sfx("powerup_off")
+				_fx.impulse("twin_out" if kind2 == LevelData.PowerUp.TWIN else "powerup_off",
+					Vector2(ev["x"], LevelData.PLAYER_Y), 1.0, Hud.powerup_color(kind2))
+			"shield_absorbed":
+				_sfx("shield_hit")
+				_fx.impulse("shield_hit", Vector2(ev["x"], ev["y"]), 1.0, Hud.powerup_color(LevelData.PowerUp.SHIELD))
+				_player.shield_flash = 1.0
 			"level_goal_met", "level_complete", "game_over":
 				pass
 	world.events.clear()
@@ -430,6 +473,8 @@ func _update_views(dt: float, game_dt: float) -> void:
 		_player.anim = _anim
 		_player.bank = lerpf(_player.bank, _last_axis, clampf(dt * 12.0, 0.0, 1.0))
 		_player.alpha = clampf(_since_respawn / 0.35, 0.0, 1.0)
+	_update_powerup_views(dt)
+	if world.player_alive:
 		_player.refresh()
 	_since_respawn += dt
 	_fx.advance(game_dt)
@@ -442,7 +487,40 @@ func _update_views(dt: float, game_dt: float) -> void:
 	_hud.anim = _anim
 	_hud.clear_time = _clear_time
 	_hud.respawn_time = _respawn_time
+	_hud.powerup_end = _powerup_end
 	_hud.queue_redraw()
+
+
+## Power-up visuals (SPEC §19.3): rapid-fire heat and the shield bubble on the ship, the TWIN as a second ship.
+## Everything fades in / out smoothly and blinks in the last seconds (Hud.powerup_blink, driven by the world's
+## timer, so it freezes with it during a respawn or at the level end).
+func _update_powerup_views(dt: float) -> void:
+	if _powerup_end >= 0.0:
+		_powerup_end += dt
+	if world.powerup == LevelData.PowerUp.NONE:
+		return
+	var blink := Hud.powerup_blink(world.powerup_left)
+	var heat := blink if world.powerup_active(LevelData.PowerUp.RAPID_FIRE) else 0.0
+	var shield := blink if world.powerup_active(LevelData.PowerUp.SHIELD) else 0.0
+	_player.heat = move_toward(_player.heat, heat, dt * 5.0)
+	_player.shield = move_toward(_player.shield, shield, dt * 7.0)
+	_player.shield_flash = move_toward(_player.shield_flash, 0.0, dt * 5.0)
+	if _twin == null:
+		return
+	var on := world.powerup_active(LevelData.PowerUp.TWIN)
+	# Materializes over 0.3 s, vanishes over 0.25 s (the FX layer draws the beam / burst around it).
+	_twin_vis = move_toward(_twin_vis, 1.0 if on else 0.0, dt / (0.3 if on else 0.25))
+	_twin.visible = _twin_vis > 0.0
+	if not _twin.visible:
+		return
+	# It leans into its patrol while it moves (PLAYING / CLEARING), level while the combat is paused.
+	var moving := on and (world.state == GameWorld.State.PLAYING or world.state == GameWorld.State.CLEARING)
+	_twin_bank = lerpf(_twin_bank, world.twin_dir if moving else 0.0, clampf(dt * 10.0, 0.0, 1.0))
+	_twin.position = Vector2(world.twin_x, LevelData.PLAYER_Y)
+	_twin.anim = _anim
+	_twin.bank = _twin_bank
+	_twin.alpha = _twin_vis * (blink if on else 1.0)
+	_twin.refresh()
 
 
 func _sync_enemies() -> void:

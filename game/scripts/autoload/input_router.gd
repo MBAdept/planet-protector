@@ -9,7 +9,7 @@ extends Node
 signal text_char(ch: String)   ## printable key typed (uppercased), for name entry
 
 enum B { UP, DOWN, LEFT, RIGHT, ENTER, ESCAPE, SPACE, P, Q, BACKSPACE, F11,
-	JOY_A, JOY_B, JOY_X, JOY_Y, JOY_START, JOY_BACK }
+	JOY_A, JOY_B, JOY_X, JOY_Y, JOY_START, JOY_BACK, SHIFT, CTRL, JOY_LB, JOY_RB }
 
 const MOVE_DEADZONE := 0.25
 const MENU_STICK_THRESHOLD := 0.5        # stick engages a menu direction at this deflection ...
@@ -128,6 +128,14 @@ func delete_pressed() -> bool:
 	return just_pressed(B.BACKSPACE) or just_pressed(B.JOY_B)
 
 
+## In game: the power-up button (SPEC §19.3) – a fresh press of Shift or Ctrl (either side), controller X / Y
+## (Square / Triangle) or LB / RB (L1 / R1). X / Y also confirm in menus: the release guard of every screen change
+## keeps a confirm press from triggering the power-up.
+func powerup_pressed() -> bool:
+	return just_pressed(B.SHIFT) or just_pressed(B.CTRL) or just_pressed(B.JOY_X) or just_pressed(B.JOY_Y) \
+		or just_pressed(B.JOY_LB) or just_pressed(B.JOY_RB)
+
+
 ## Space, A or B held (Cross/Circle).
 func fire_held() -> bool:
 	return is_down(B.SPACE) or is_down(B.JOY_A) or is_down(B.JOY_B)
@@ -206,6 +214,14 @@ func _poll(b: int) -> bool:
 			return _joy(JOY_BUTTON_START)
 		B.JOY_BACK:
 			return _joy(JOY_BUTTON_BACK)
+		B.SHIFT:
+			return Input.is_key_pressed(KEY_SHIFT)
+		B.CTRL:
+			return Input.is_key_pressed(KEY_CTRL)
+		B.JOY_LB:
+			return _joy(JOY_BUTTON_LEFT_SHOULDER)
+		B.JOY_RB:
+			return _joy(JOY_BUTTON_RIGHT_SHOULDER)
 	return false
 
 

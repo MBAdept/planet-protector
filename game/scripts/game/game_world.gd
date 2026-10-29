@@ -9,8 +9,14 @@ extends RefCounted
 ## for the world's life. Only the horizontal limits follow it (player clamp / start, enemy turning and spawn
 ## limits, sideways bullet removal); every speed, distance, hit box, timing and lane y stays the same. With width
 ## 960 the world is bit-for-bit the classic one.
+## Power-ups (SPEC §19.3, only with POWER-UPS ON): `powerup` (set by GameScreen right after construction) is the
+## level's power-up, triggered once with activate_powerup() – RAPID FIRE, TWIN or SHIELD for POWERUP_TIME real
+## seconds of combat. They use no random numbers; with powerup NONE (the classic game, every demo) the world is
+## bit-for-bit the one without them.
 
 enum State { INTRO, PLAYING, RESPAWN, CLEARING, COMPLETE, GAME_OVER_WAIT, GAME_OVER }
+## Power-up life cycle (SPEC §19.3): READY → ACTIVE → USED, once per level, never back.
+enum PowerState { READY, ACTIVE, USED }
 
 const EPS := 1e-6
 const BULLET_HALF := LevelData.ENEMY_BULLET_W * 0.5
@@ -56,6 +62,7 @@ class Shot:
 	var piercing := false
 	var age := 0.0
 	var hit_ids := {}            ## enemy ids this projectile already touched
+	var twin := false            ## fired by the TWIN power-up's second ship (guided: follows the twin)
 
 
 class Bullet:
@@ -120,6 +127,22 @@ var player_x := LevelData.PLAYER_START_X
 var player_alive := true
 var respawn_timer := 0.0
 
+# --- Power-ups (SPEC §19.3) ----------------------------------------------------------------------
+## The level's power-up (LevelData.PowerUp): LevelData.powerup_of(level) with POWER-UPS ON, else NONE (also every
+## demo world). Set once, right after construction.
+var powerup: int = LevelData.PowerUp.NONE
+var powerup_state: PowerState = PowerState.READY
+## REAL seconds left while ACTIVE (0 otherwise). It runs only in PLAYING sub-steps: frozen in the intro, during a
+## respawn, at the level end (CLEARING) and in the pause; an active power-up survives a player hit.
+var powerup_left := 0.0
+## RAPID FIRE: game seconds until the next salvo may leave (counts down in PLAYING while ACTIVE; the rest of a
+## sub-step is carried over, so on average a salvo leaves exactly every RAPID_FIRE_INTERVAL × shots per salvo).
+var rapid_cooldown := 0.0
+## TWIN: x and direction (+1 right, −1 left) of the second ship. Kept after it is gone: its guided shots still in
+## flight follow this last x.
+var twin_x := 0.0
+var twin_dir := 1.0
+
 var enemies: Array[Enemy] = []
 var shots: Array[Shot] = []
 var bullets: Array[Bullet] = []
@@ -148,6 +171,7 @@ var _fire: Dictionary
 var _rule: int
 var _points := 0
 var _fire_factor := 0.0
+var _powerup_steps := 0          ## PLAYING sub-steps since the power-up was activated
 
 
 func _init(p_level: int, p_difficulty: int, p_ship_id: int, p_lives: int, rng_seed: int = 0,
@@ -265,6 +289,41 @@ func is_finished() -> bool:
 	return state == State.COMPLETE or state == State.GAME_OVER
 
 
+## True while the power-up `kind` (LevelData.PowerUp) is ACTIVE.
+func powerup_active(kind: int) -> bool:
+	return powerup == kind and powerup_state == PowerState.ACTIVE
+
+
+## Duration of this level's power-up in REAL seconds (0 without one).
+func powerup_time() -> float:
+	return float(LevelData.POWERUP_TIME.get(powerup, 0.0))
+
+
+## True if the power-up can be triggered right now (SPEC §19.3): the level has one, it is still READY, the combat
+## runs (PLAYING – not the intro, a respawn or the level end) with the ship alive and the goal not yet met.
+func can_activate_powerup() -> bool:
+	return powerup != LevelData.PowerUp.NONE and powerup_state == PowerState.READY and state == State.PLAYING \
+		and player_alive and not goal_met
+
+
+## The power-up button: READY → ACTIVE for POWERUP_TIME real seconds of combat. Returns false and changes nothing
+## when can_activate_powerup() is false. RAPID FIRE fires at once; the TWIN appears at the ship and heads for the
+## farther screen edge (a tie – the start position – goes right).
+func activate_powerup() -> bool:
+	if not can_activate_powerup():
+		return false
+	powerup_state = PowerState.ACTIVE
+	powerup_left = powerup_time()
+	_powerup_steps = 0
+	rapid_cooldown = 0.0
+	if powerup == LevelData.PowerUp.TWIN:
+		twin_x = player_x
+		var room_right := LevelData.player_max_x(width) - player_x
+		twin_dir = 1.0 if room_right >= player_x - LevelData.PLAYER_MIN_X else -1.0
+	events.append({"type": "powerup_activated", "kind": powerup, "x": player_x})
+	return true
+
+
 # --- Driving -------------------------------------------------------------------------------------
 ## Advances the world by REAL seconds. Sub-steps itself (fixed 1/240 game-second steps).
 func update(real_dt: float, move_axis: float, fire_held: bool) -> void:
@@ -333,6 +392,8 @@ func step(move_axis: float, fire_held: bool) -> void:
 				_respawn()
 		State.CLEARING:
 			_move_player(dt, clampf(move_axis, -1.0, 1.0))
+			if powerup_active(LevelData.PowerUp.TWIN):
+				_move_twin(dt)   # the twin patrols until the level ends (its timer is frozen meanwhile)
 			_move_shots(dt)
 			if not enemies.is_empty():
 				# Bonus level ended by attempts: the survivors keep flying (harmless, no fire, no refill).
@@ -348,18 +409,33 @@ func step(move_axis: float, fire_held: bool) -> void:
 
 func _combat_step(dt: float, axis: float, fire_held: bool) -> void:
 	combat_steps += 1
+	var rapid := powerup_active(LevelData.PowerUp.RAPID_FIRE)
+	var twin := powerup_active(LevelData.PowerUp.TWIN)
 	_move_player(dt, axis)
+	if twin:
+		_move_twin(dt)
 	_update_refills(dt)
 	_move_enemies(dt)
 	_move_shots(dt)
 	_collide_shots()
-	if fire_held and player_alive and shots.is_empty():
-		_try_fire()
+	if rapid:
+		# RAPID FIRE (SPEC §19.3): the one-salvo rule is suspended, a salvo leaves whenever the cooldown ran out.
+		if rapid_cooldown > EPS:
+			rapid_cooldown -= dt
+		if fire_held and player_alive and rapid_cooldown <= EPS and _try_fire():
+			rapid_cooldown += LevelData.RAPID_FIRE_INTERVAL * float(ShipData.shot_offsets(ship_id).size())
+	elif fire_held and player_alive and not _has_shots(false):
+		_try_fire()   # only the ship's OWN previous salvo blocks (SPEC §4) – the twin's shots do not count
+	if twin and not _has_shots(true):
+		_fire_twin()
 	_move_bullets(dt)
 	_update_enemy_fire(dt)
+	if powerup_active(LevelData.PowerUp.SHIELD):
+		_shield_absorb()
 	_collide_player()
 	if state == State.PLAYING:
 		_check_goal()
+	_tick_powerup()
 
 
 # --- Player --------------------------------------------------------------------------------------
@@ -370,29 +446,46 @@ func _move_player(dt: float, axis: float) -> void:
 		LevelData.player_max_x(width))
 
 
-## Creates a new salvo (SPEC §4). Caller guarantees that the previous salvo is gone.
-func _try_fire() -> void:
+## Creates a new salvo (SPEC §4). Caller guarantees that the previous salvo is gone (or RAPID FIRE allows one).
+## Returns false if no salvo left (goal met, no bonus attempts left).
+func _try_fire() -> bool:
 	if is_bonus() and attempts <= 0:
-		return
+		return false
 	# No new salvo once the level goal is reached – not even in the sub-step of the last kill
 	# (held fire would otherwise cost a bonus attempt after the 20th kill, REFERENCE H).
 	if goal_met or _goal_condition():
-		return
+		return false
+	var sh := ship()
+	_spawn_salvo(player_x, false)
+	salvos_fired += 1
+	if is_bonus():
+		attempts -= 1
+	events.append({"type": "shot_fired", "ship_id": ship_id, "count": int(sh["count"]), "x": player_x})
+	return true
+
+
+## The projectiles of one salvo of the ship type, fired from x (twin = true: the TWIN's salvo).
+func _spawn_salvo(x: float, twin: bool) -> void:
 	var sh := ship()
 	for off in ShipData.shot_offsets(ship_id):
 		var s := Shot.new()
 		s.id = _new_id()
 		s.offset = off
-		s.x = player_x + off
+		s.x = x + off
 		s.y = LevelData.SALVO_Y
 		s.speed = float(sh["speed"])
 		s.guided = bool(sh["guided"])
 		s.piercing = bool(sh["piercing"])
+		s.twin = twin
 		shots.append(s)
-	salvos_fired += 1
-	if is_bonus():
-		attempts -= 1
-	events.append({"type": "shot_fired", "ship_id": ship_id, "count": int(sh["count"]), "x": player_x})
+
+
+## True while a projectile of the ship (twin = false) or of the TWIN (twin = true) is in flight.
+func _has_shots(twin: bool) -> bool:
+	for s in shots:
+		if s.twin == twin:
+			return true
+	return false
 
 
 func _move_shots(dt: float) -> void:
@@ -402,7 +495,7 @@ func _move_shots(dt: float) -> void:
 		s.age += dt
 		s.y -= s.speed * dt
 		if s.guided:
-			s.x = player_x + s.offset
+			s.x = (twin_x if s.twin else player_x) + s.offset
 		if s.y < LevelData.OWN_PROJECTILE_REMOVE_Y:
 			shots.remove_at(i)
 		else:
@@ -451,6 +544,59 @@ func _respawn() -> void:
 			e.fire_timer = _initial_figure_fire_time()
 	events.append({"type": "player_respawn", "x": player_x})
 	_check_goal()
+
+
+# --- Power-ups (SPEC §19.3) ----------------------------------------------------------------------
+## One PLAYING sub-step of an ACTIVE power-up = SIM_STEP / speed_factor real seconds. Counted in sub-steps, so it
+## lasts exactly POWERUP_TIME real seconds of combat at every speed factor. At 0 → USED and powerup_expired
+## (x: the twin's for TWIN, else the ship's).
+func _tick_powerup() -> void:
+	if powerup_state != PowerState.ACTIVE:
+		return
+	_powerup_steps += 1
+	powerup_left = maxf(powerup_time() - float(_powerup_steps) * LevelData.SIM_STEP / speed_factor, 0.0)
+	if powerup_left > EPS:
+		return
+	powerup_left = 0.0
+	powerup_state = PowerState.USED
+	var x := twin_x if powerup == LevelData.PowerUp.TWIN else player_x
+	events.append({"type": "powerup_expired", "kind": powerup, "x": x})
+
+
+## TWIN: patrols between the ship limits at the ship's speed, turning at the edges.
+func _move_twin(dt: float) -> void:
+	var hi := LevelData.player_max_x(width)
+	twin_x += twin_dir * LevelData.PLAYER_SPEED * dt
+	if twin_x >= hi:
+		twin_x = hi
+		twin_dir = -1.0
+	elif twin_x <= LevelData.PLAYER_MIN_X:
+		twin_x = LevelData.PLAYER_MIN_X
+		twin_dir = 1.0
+
+
+## TWIN: its own salvo (normal shots of the ship type, marked twin) – fired whenever none of its shots is in
+## flight; like the ship it fires nothing once the level goal is reached.
+func _fire_twin() -> void:
+	if goal_met or _goal_condition():
+		return
+	_spawn_salvo(twin_x, true)
+	events.append({"type": "shot_fired", "ship_id": ship_id, "count": int(ship()["count"]), "x": twin_x, "twin": true})
+
+
+## SHIELD: every enemy bullet whose centre comes within |dx| < SHIELD_DX and |dy| < SHIELD_DY of the ship is
+## absorbed – a superset of the hit box, so the ship cannot be hit while the shield is up.
+func _shield_absorb() -> void:
+	if not player_alive:
+		return
+	var i := 0
+	while i < bullets.size():
+		var b := bullets[i]
+		if absf(b.x - player_x) < LevelData.SHIELD_DX and absf(b.y - LevelData.PLAYER_Y) < LevelData.SHIELD_DY:
+			bullets.remove_at(i)
+			events.append({"type": "shield_absorbed", "x": b.x, "y": b.y})
+		else:
+			i += 1
 
 
 # --- Enemies -------------------------------------------------------------------------------------
