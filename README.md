@@ -109,6 +109,9 @@ Die eingebauten Bedienelemente des Decks funktionieren ohne Einrichtung als Cont
 oder linker Stick bewegen, A/B feuern, Start pausiert). Einstellungen und Highscores liegen wie unter Linux in
 `~/.local/share/planet_protector/`.
 
+**Bilder für die Steam-Bibliothek:** Kachel, breite Kachel, Banner, Logo und Icon liegen im Ordner
+[`steam-grid/`](steam-grid/), samt Anleitung, wie man sie in Steam einstellt.
+
 ## Spielablauf
 
 - **Titel**: Schwierigkeit (Beginner, Normal, Hard, Expert), Musik und Soundeffekte an/aus, Lautstärke für Musik und
@@ -139,6 +142,7 @@ Tests: `cd game && godot --headless --path . -s res://tests/run_tests.gd`
 
 Die Assets lassen sich neu erzeugen:
 - Grafik: `tools/blender/ships.py`, `enemies.py`, `planets.py`, `ground.py` (Blender als Python-Modul `bpy`)
+- Steam-Bilder: `tools/blender/steam_keyart.py` (siehe `steam-grid/README.md`)
 - Audio: siehe `docs/AUDIO.md`
 
 ## Dokumente
