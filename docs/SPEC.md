@@ -768,7 +768,7 @@ in-match screens (turn HAND-OVER, MATCH RESULT) confirm with Enter / X / Y / Sta
 interlevel).
 - SHIP LOCK (`ship_lock_screen.gd`, setup `{"player": k (who locks), "locked": ids}`): "PLAYER k LOCKS", "Lock up to 3
   ships PLAYER j may not fly" and a pulsing "PLAYER j – LOOK AWAY!" pill (eye-slash pictogram) in PLAYER j's colour. Six
-  rows (ship icon, name in its accent colour, SPEED / SHOTS / GUIDED / PIERCING / BONUS) and a DONE row with three padlock
+  rows (ship icon, name in its accent colour, SHOT SPEED / SHOTS / GUIDED / PIERCING / BONUS) and a DONE row with three padlock
   pips and "n / 3 LOCKED". Up/down select (wrapping); confirm on a ship toggles its lock (a padlock stamp; locking and
   unlocking play the same menu_move blip as a cursor step, so the player looking away cannot hear the locks); a 4th lock is
   refused (menu_back, the count flashes red, "Only 3 ships can be locked – unlock one first", the hint reads "Max 3

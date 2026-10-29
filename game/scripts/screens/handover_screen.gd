@@ -256,6 +256,8 @@ static func powerup_rect(pname: String) -> Rect2:
 
 ## "POWER-UP THIS LEVEL: RAPID FIRE   [SHIFT] / (X)" on a dark pill with a gold rim.
 func _draw_powerup(a: float) -> void:
+	if a <= 0.0:
+		return
 	var pname := String(LevelData.POWERUP_NAMES[powerup()])
 	var w := powerup_widths(pname)
 	var r := powerup_rect(pname)
@@ -271,7 +273,7 @@ func _draw_powerup(a: float) -> void:
 	x += w[1] + 22.0
 	var ks := POWERUP_KEY_SIZE
 	for i in POWERUP_KEYS.size():
-		x += UiKit.glyph(self, POWERUP_KEYS[i], x, POWERUP_Y, ks, Color(UiKit.COLOR_TEXT, 0.85 * a))
+		x += UiKit.glyph(self, POWERUP_KEYS[i], x, POWERUP_Y, ks, Color(UiKit.COLOR_TEXT, 0.85 * a), a)
 		if i < POWERUP_KEYS.size() - 1:
 			UiKit.text(self, Assets.font_body, Vector2(x + ks * 0.45, UiKit.baseline_for(Assets.font_body, ks, POWERUP_Y)),
 				"/", ks, Color(UiKit.COLOR_DIM, 0.6 * a), HORIZONTAL_ALIGNMENT_CENTER)

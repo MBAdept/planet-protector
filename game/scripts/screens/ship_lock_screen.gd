@@ -16,7 +16,7 @@ const TITLE_Y := 52.0
 const SUB_Y := 85.0
 const WARN_Y := 129.0           ## centre of the LOOK AWAY banner
 const WARN_SIZE := 19
-const ROW_W := 760.0
+const ROW_W := 800.0
 const ROW_H := 56.0
 const ROW_STEP := 64.0
 const LIST_Y := 168.0           ## top of the first ship row
@@ -36,7 +36,7 @@ const MSG_Y := 638.0            ## refusal message
 const MSG_TIME := 2.2
 const HINT_Y := 684.0
 ## Stat columns of the compact line: label + widest value (for the column width).
-const STAT_COLS := [["SPEED", "888"], ["SHOTS", "8"], ["GUIDED", "YES"], ["PIERCING", "YES"], ["BONUS", "×888"]]
+const STAT_COLS := [["SHOT SPEED", "888"], ["SHOTS", "8"], ["GUIDED", "YES"], ["PIERCING", "YES"], ["BONUS", "×888"]]
 
 ## Who locks (0 / 1); the ships are locked for the other player.
 var player := 0

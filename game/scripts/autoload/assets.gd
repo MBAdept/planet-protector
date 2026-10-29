@@ -18,6 +18,11 @@ func _ready() -> void:
 	font_title_heavy = _variable_font("res://assets/fonts/Orbitron.ttf", 900)
 	font_body = _variable_font("res://assets/fonts/Exo2.ttf", 500)
 	font_body_bold = _variable_font("res://assets/fonts/Exo2.ttf", 700)
+	# Orbitron lacks a few glyphs the texts use (e.g. "·" in "RANK 2 · NORMAL"): they come from the game's own Exo 2
+	# instead of whatever system font the OS offers (or a missing-glyph box where there is none).
+	if font_title is FontVariation and font_body_bold is FontVariation:
+		font_title.fallbacks = [font_body_bold]
+		font_title_heavy.fallbacks = [font_body_bold]
 
 
 # --- Fonts ---------------------------------------------------------------------------------------

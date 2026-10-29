@@ -410,14 +410,16 @@ static func glyph_width(token: String, size: int = 14) -> float:
 	return maxf(text_width(Assets.font_body_bold, _key_label(token), label_size(int(size * 0.8))) + size * 0.9, h)
 
 
-## Draws a glyph with its left edge at x, vertically centred on cy. Returns its width.
+## Draws a glyph with its left edge at x, vertically centred on cy. Returns its width. `fade` scales the fixed alphas
+## of the key cap and the inactive pad dots (the label / active dot use `color` as given), so a glyph can fade in and
+## dim together with the element it belongs to.
 static func glyph(ci: CanvasItem, token: String, x: float, cy: float, size: int = 14,
-		color: Color = COLOR_TEXT) -> float:
+		color: Color = COLOR_TEXT, fade: float = 1.0) -> float:
 	var w := glyph_width(token, size)
 	var h := size * 1.55
 	var rect := Rect2(x, cy - h * 0.5, w, h)
-	var fill := Color(color, 0.10)
-	var border := Color(color, 0.55)
+	var fill := Color(color, 0.10 * fade)
+	var border := Color(color, 0.55 * fade)
 	if token.begins_with("pad:"):
 		var k := token.substr(4)
 		match k:
@@ -431,13 +433,13 @@ static func glyph(ci: CanvasItem, token: String, x: float, cy: float, size: int 
 					if key == k:
 						ci.draw_circle(p, h * 0.2, color, true, -1.0, true)
 					else:
-						ci.draw_circle(p, h * 0.12, Color(color, 0.4), true, -1.0, true)
+						ci.draw_circle(p, h * 0.12, Color(color, 0.4 * fade), true, -1.0, true)
 			"DPAD":
 				var dc := Vector2(x + w * 0.5, cy)
 				var a := h * 0.42
 				var t := h * 0.16
-				panel_ex(ci, Rect2(dc.x - a, dc.y - t, a * 2, t * 2), Color(color, 0.85), Color(0, 0, 0, 0), 2, 0)
-				panel_ex(ci, Rect2(dc.x - t, dc.y - a, t * 2, a * 2), Color(color, 0.85), Color(0, 0, 0, 0), 2, 0)
+				panel_ex(ci, Rect2(dc.x - a, dc.y - t, a * 2, t * 2), Color(color, 0.85 * fade), Color(0, 0, 0, 0), 2, 0)
+				panel_ex(ci, Rect2(dc.x - t, dc.y - a, t * 2, a * 2), Color(color, 0.85 * fade), Color(0, 0, 0, 0), 2, 0)
 			_:
 				panel_ex(ci, rect, fill, border, int(h * 0.5), 1)
 				var fs := label_size(int(size * 0.72))

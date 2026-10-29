@@ -351,11 +351,11 @@ func _draw_powerup() -> void:
 			x += _f_label.get_string_size("READY", HORIZONTAL_ALIGNMENT_LEFT, -1, ls).x + 16.0
 			var gs := PILL_HINT_SIZE
 			var hc := Color(C_VALUE, 0.8 * a)
-			x += UiKit.glyph(self, POWERUP_HINT[0], x, cy, gs, hc)
+			x += UiKit.glyph(self, POWERUP_HINT[0], x, cy, gs, hc, a)
 			UiKit.text(self, Assets.font_body, Vector2(x + gs * 0.45, UiKit.baseline_for(Assets.font_body, gs, cy)), "/", gs,
 				Color(hc, hc.a * 0.6), HORIZONTAL_ALIGNMENT_CENTER)
 			x += gs * 0.9
-			UiKit.glyph(self, POWERUP_HINT[1], x, cy, gs, hc)
+			UiKit.glyph(self, POWERUP_HINT[1], x, cy, gs, hc, a)
 		"active":
 			var blink := float(p["blink"])
 			_pill(r, col, a, 0.6 * blink)

@@ -7,6 +7,7 @@ extends Node2D
 ## holographic sheen and engines in the tint colour).
 
 const FxTex := preload("res://scripts/game/fx_tex.gd")
+const GhostShader := preload("res://shaders/ghost.gdshader")
 
 ## Shield bubble: half extents around the ship (the ship ≈ 70 × 48) and its centre offset (a little above the ship
 ## centre, so the dome rests on the ground) – the same ellipse the world absorbs fireballs with (LevelData.SHIELD_R /
@@ -38,6 +39,12 @@ var _accent := Color(0.4, 0.7, 1.0)
 
 func _ready() -> void:
 	_accent = tint if ghost else ShipData.ship(ship_id)["accent"]
+	if ghost:
+		# The TWIN's ship itself is drawn as a hologram (monochrome in the tint, scanlines, 55 % opacity).
+		var gm := ShaderMaterial.new()
+		gm.shader = GhostShader
+		gm.set_shader_parameter("tint", tint)
+		material = gm
 	var m := CanvasItemMaterial.new()
 	m.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
 	_glow_node = Node2D.new()
@@ -61,12 +68,8 @@ func refresh() -> void:
 func _draw() -> void:
 	var tex := Assets.ship_texture(ship_id)
 	var size := Vector2(tex.get_width(), tex.get_height()) * 0.5
-	if ghost:
-		# Translucent, washed in the power-up colour; the additive sheen in _draw_front makes it glow.
-		var c := Color(1, 1, 1).lerp(tint, 0.45)
-		draw_texture_rect(tex, Rect2(-size * 0.5, size), false, Color(c.r, c.g, c.b, alpha * 0.4))
-	else:
-		draw_texture_rect(tex, Rect2(-size * 0.5, size), false, Color(1, 1, 1, alpha))
+	# The TWIN (ghost) gets its hologram look from its material (shaders/ghost.gdshader), the sheen in _draw_front.
+	draw_texture_rect(tex, Rect2(-size * 0.5, size), false, Color(1, 1, 1, alpha))
 
 
 func _draw_glow() -> void:
@@ -110,7 +113,7 @@ func _draw_ghost_sheen() -> void:
 	var tex := Assets.ship_texture(ship_id)
 	var size := Vector2(tex.get_width(), tex.get_height()) * 0.5
 	var sh := 0.85 + 0.15 * sin(anim * 5.3) * sin(anim * 2.1 + 0.7)
-	_front.draw_texture_rect(tex, Rect2(-size * 0.5, size), false, Color(tint.r, tint.g, tint.b, 0.5 * alpha * sh))
+	_front.draw_texture_rect(tex, Rect2(-size * 0.5, size), false, Color(tint.r, tint.g, tint.b, 0.2 * alpha * sh))
 	FxTex.draw_centered(_front, FxTex.glow(), Vector2(0, 2), Vector2(120, 78), Color(tint.r, tint.g, tint.b, 0.16 * alpha))
 
 
