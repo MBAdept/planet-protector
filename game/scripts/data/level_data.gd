@@ -122,10 +122,19 @@ const POWERUP_TIME := {PowerUp.RAPID_FIRE: 10.0, PowerUp.TWIN: 15.0, PowerUp.SHI
 ## Rapid fire: game seconds between two salvos PER SHOT of the salvo (single ships 0.18 s, double ships 0.36 s), so
 ## every ship fires the same number of shots per second; the one-salvo-at-a-time rule is suspended meanwhile.
 const RAPID_FIRE_INTERVAL := 0.18
-## Shield: an enemy bullet whose centre comes within |dx| < SHIELD_DX and |dy| < SHIELD_DY of the ship centre
-## (x, PLAYER_Y) is absorbed (a superset of the ship's hit box 21 × 15, so nothing reaches the ship).
-const SHIELD_DX := 34.0
-const SHIELD_DY := 30.0
+## Shield: the bubble is an ellipse with the half axes SHIELD_R around (x, SHIELD_CY) – the ship is drawn in it
+## (PlayerView) and every enemy bullet whose centre enters it is absorbed. Its visible rim lies at ≈ 0.88 · SHIELD_R, so a
+## fireball (half width 5) is absorbed as its head touches the rim. It contains the ship's hit box 21 × 15 (worst corner
+## 0.40 < 1), so nothing reaches the ship.
+const SHIELD_R := Vector2(47.0, 40.0)
+const SHIELD_CY := PLAYER_Y - 3.0
+
+
+## True if a point lies inside the shield ellipse of a ship at x = ship_x.
+static func in_shield(px: float, py: float, ship_x: float) -> bool:
+	var u := (px - ship_x) / SHIELD_R.x
+	var v := (py - SHIELD_CY) / SHIELD_R.y
+	return u * u + v * v < 1.0
 
 # --- Colours (top → bottom gradient stops) -------------------------------------------------------
 const C_VIOLET_STOPS: Array[Color] = [Color(0.66, 0.28, 1.0), Color(0.06, 0.02, 0.09)]

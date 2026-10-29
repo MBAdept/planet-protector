@@ -20,6 +20,9 @@ const H := 720.0
 const CX := 480.0
 ## Duration of the fade-in when a screen appears (real seconds).
 const FADE_IN := 0.22
+## Hand-over guard of the two-player screens (guarded_confirm): a confirm press only counts after the screen's delay AND
+## this many quiet seconds without a refused press, so the outgoing player's tapping cannot pass a hand-over.
+const HANDOVER_QUIET := 0.4
 ## Vertical centre and size of the standard continue hint.
 const CONTINUE_HINT_Y := 688.0
 const CONTINUE_HINT_SIZE := 15
@@ -33,6 +36,8 @@ var sw := W
 ## Offset of the 960-wide content layout on the canvas (0 in 4:3, 160 in 16:9); also the node's position.x.
 var ox := 0.0
 var _done := false
+var _guard_open := false
+var _guard_press := -INF
 
 
 func setup(p_args: Dictionary) -> void:
@@ -108,6 +113,20 @@ func full_rect() -> Rect2:
 
 func sfx(sfx_name: String) -> void:
 	AudioManager.play_sfx(sfx_name)
+
+
+## Confirm of a two-player hand-over point (SPEC §19.3): true for a fresh confirm press once the screen has run `delay`
+## seconds and no confirm press came in the last HANDOVER_QUIET seconds. Every refused press restarts that quiet window,
+## so continuous tapping (the previous player mashing through) never confirms, while the incoming player's first press
+## after taking the controller does. Once a press was accepted the guard stays open (further presses count at once).
+func guarded_confirm(allow_fire_buttons: bool, delay: float) -> bool:
+	if not InputRouter.confirm_pressed(allow_fire_buttons):
+		return false
+	if _guard_open or (time >= delay and time - _guard_press >= HANDOVER_QUIET):
+		_guard_open = true
+		return true
+	_guard_press = time
+	return false
 
 
 ## 0 → 1 between `start` and `start + duration` seconds of screen time, smoothstepped.

@@ -278,10 +278,12 @@ func powerup_pill() -> Dictionary:
 	match world.powerup_state:
 		GameWorld.PowerState.READY:
 			out["mode"] = "ready"
-			out["alpha"] = 0.45 if world.goal_met else 1.0
+			# Full strength only while the button really works (not in the intro banner, a respawn, after the goal).
+			out["alpha"] = 1.0 if world.can_activate_powerup() else 0.45
 		GameWorld.PowerState.ACTIVE:
 			out["mode"] = "active"
-			out["alpha"] = 1.0
+			var over := world.state == GameWorld.State.GAME_OVER_WAIT or world.state == GameWorld.State.GAME_OVER
+			out["alpha"] = 0.45 if over else 1.0
 			out["fill"] = clampf(world.powerup_left / maxf(world.powerup_time(), 1e-6), 0.0, 1.0)
 			out["seconds"] = "%.1f" % (ceilf(world.powerup_left * 10.0 - 1e-6) / 10.0)
 			out["blink"] = powerup_blink(world.powerup_left)
@@ -341,7 +343,7 @@ func _draw_powerup() -> void:
 	match mode:
 		"ready":
 			# Gently pulsing: the border light and READY breathe.
-			var pulse := 0.5 + 0.5 * cos(anim * TAU * 0.9) if not world.goal_met else 0.0
+			var pulse := 0.5 + 0.5 * cos(anim * TAU * 0.9) if world.can_activate_powerup() else 0.0
 			_pill(r, col, a, snappedf(0.4 + 0.4 * pulse, 1.0 / 32.0))
 			UiKit.text(self, _f_label, Vector2(x, base), pname, ls, Color(col, a))
 			x += name_w + 10.0

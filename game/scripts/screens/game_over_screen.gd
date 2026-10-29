@@ -5,7 +5,9 @@ extends ScreenBase
 ## Two players (SPEC §19.2): {"player": k, "other_status": "plays_on" | "won" | "out"} (the other player still has
 ## levels to play / has completed level 20 / is out as well) – a "PLAYER k" label in the player colour above GAME OVER
 ## and, instead of NEW HIGHSCORE (the name entries come at the end of the match), "PLAYER j PLAYS ON" or
-## "PLAYER j SAVED EARTH!" in j's colour, or "MATCH OVER" when both are out.
+## "PLAYER j SAVED EARTH!" in j's colour, or "MATCH OVER" when both are out. "next_screen": the screen that really
+## follows (RunFlow.match_next) – confirming is silent when it is the arrival (completely silent, SPEC §11/§14), like
+## the interlevel.
 
 const CONFIRM_DELAY := 1.0
 ## Baselines of the two-player label above GAME OVER and of the line under the panel.
@@ -16,6 +18,7 @@ var _n := 1
 var _qualifies := false
 var _player := -1
 var _other_status := ""
+var _next_screen := ""
 
 
 func _enter() -> void:
@@ -25,6 +28,7 @@ func _enter() -> void:
 	_qualifies = bool(args.get("qualifies", false))
 	_player = int(args.get("player", -1))
 	_other_status = String(args.get("other_status", "out"))
+	_next_screen = String(args.get("next_screen", ""))
 	if _player >= 0:
 		_qualifies = false   # a match enters its names at the end (match result)
 
@@ -45,7 +49,8 @@ func _star_velocity() -> Vector2:
 
 func _tick(_delta: float) -> void:
 	if time >= CONFIRM_DELAY and InputRouter.confirm_pressed():
-		sfx("menu_confirm")
+		if _next_screen != "arrival":
+			sfx("menu_confirm")
 		finish("continue")
 
 

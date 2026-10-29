@@ -408,7 +408,8 @@ func _match_args(screen_name: String) -> Dictionary:
 		"game_over":
 			var other := 1 - k
 			var status := "out" if bool(out[other]) else ("won" if bool(Run.player_get(other, "won")) else "plays_on")
-			return {"level": n, "qualifies": false, "player": k, "other_status": status}
+			return {"level": n, "qualifies": false, "player": k, "other_status": status,
+				"next_screen": String(RunFlow.match_next("game_over", "continue", n, k, out)["screen"])}
 		"mars_rules":
 			var ships: Array = []
 			for j in 2:

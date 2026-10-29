@@ -769,14 +769,20 @@ interlevel).
 - SHIP LOCK (`ship_lock_screen.gd`, setup `{"player": k (who locks), "locked": ids}`): "PLAYER k LOCKS", "Lock up to 3
   ships PLAYER j may not fly" and a pulsing "PLAYER j – LOOK AWAY!" pill (eye-slash pictogram) in PLAYER j's colour. Six
   rows (ship icon, name in its accent colour, SPEED / SHOTS / GUIDED / PIERCING / BONUS) and a DONE row with three padlock
-  pips and "n / 3 LOCKED". Up/down select (wrapping); confirm on a ship toggles its lock (lock: `locked_hit` clink and a
-  padlock stamp; unlock: menu_move); a 4th lock is refused (menu_back, the count flashes red, "Only 3 ships can be locked –
-  unlock one first"). Confirm on DONE → `finished("done", {"locked": ids ascending})`; Escape / B → `finished("back")`.
+  pips and "n / 3 LOCKED". Up/down select (wrapping); confirm on a ship toggles its lock (a padlock stamp; locking and
+  unlocking play the same menu_move blip as a cursor step, so the player looking away cannot hear the locks); a 4th lock is
+  refused (menu_back, the count flashes red, "Only 3 ships can be locked – unlock one first", the hint reads "Max 3
+  locked"). Confirm on DONE → `finished("done", {"locked": ids ascending})`; Escape / B → `finished("back")`.
+- Hand-over guard (`ScreenBase.guarded_confirm`) on every point where the controller changes hands – SHIP LOCK (0.45 s),
+  both HAND-OVER kinds (0.6 s), LOCK REVEAL (0.8 s) and the two-player SHIP SELECT (0.45 s): a confirm press only counts
+  after the screen's delay AND 0.4 s without a refused press; every refused press restarts that quiet window. So the
+  previous player's tapping or a double tap never passes a hand-over or acts on the next player's screen, while the
+  incoming player's first press after taking the controller does. The one-player ship select is not guarded.
 - HAND-OVER (`handover_screen.gd`), confirm after 0.6 s → `finished("continue")`, Escape / B do nothing:
   kind "locks" `{"player": k}`: "PLAYER j READY" with a check badge, "Ship locks set – they stay secret until both
   players are done", "Pass the controller to PLAYER k", "PLAYER j – LOOK AWAY!" – it shows (and reads) no lock data.
-  Kind "turn" `{"player": k, "level": n}` (Main opens it as screen "turn"): the level's planet, "LEVEL n – <NAME>" (bonus
-  level: "LEVEL 13 – BONUS ROUND"), a big "PLAYER k", "GET READY", SCORE | LIVES | SHIP of the player, the other player
+  Kind "turn" `{"player": k, "level": n}` (Main opens it as screen "turn"): the level's planet, "LEVEL n • <NAME>" (bonus
+  level: "LEVEL 13 • BONUS ROUND"), a big "PLAYER k", "GET READY", SCORE | LIVES | SHIP of the player, the other player
   small (score, GAME OVER / EARTH SAVED) and – with POWER-UPS on a power-up level – "POWER-UP THIS LEVEL: RAPID FIRE" with
   the key hint. Silent: it sits between two levels like the interlevel.
 - LOCK REVEAL (`lock_reveal_screen.gd`, setup `{"locked": [ids P1 may not fly, ids P2 may not fly]}`): "SHIP LOCKS
@@ -796,7 +802,8 @@ interlevel).
   "Next: …" line; GAME OVER "PLAYER k", no NEW HIGHSCORE (entries come at the end), instead "PLAYER j PLAYS ON" /
   "PLAYER j SAVED EARTH!" / "MATCH OVER"; MARS RULES with the ships still in the match (mixed piercing / normal ships get
   both locked-hit lines); VICTORY both players' scores (EARTH SAVED / GAME OVER · LEVEL n under each); NAME ENTRY "PLAYER k"
-  and the category in the rank line ("RANK 2 · NORMAL · POWER-UPS").
+  and the category in the rank line ("RANK 2 · NORMAL · POWER-UPS"). Confirming a GAME OVER or INTERLEVEL is silent when
+  the arrival comes next (it is completely silent, §11/§14).
 - Tests: `tests/test_hotseat_screens.gd`, `tests/test_hotseat_flow.gd`.
 
 ### 19.4 HUD in a match
@@ -822,11 +829,14 @@ Only with POWER-UPS ON (`Run.powerups`); every demo world has none.
   then patrols between the ship limits at the ship's speed (in PLAYING and CLEARING). It fires its own salvo whenever none
   of ITS shots is in flight (not after the level goal is met). Its shots are normal shots of the ship type (speed, guided,
   piercing, points); guided ones follow the twin, after it is gone they fly on. Enemy bullets pass through it. The ship's
-  own one-salvo rule counts only the ship's own shots. A player hit clears all shots, the twin's included.
-- SHIELD: every enemy bullet whose centre comes within |dx| < 34 and |dy| < 30 of the ship centre is absorbed – a superset
-  of the hit box, so the ship cannot be hit while the shield is up.
-- HUD: a pill centred in the ground strip – READY (name, pulsing READY, key hint SHIFT / X; dimmed once the goal is met),
-  ACTIVE (name, draining bar, seconds left; blinking and red in the last 2 s), USED (dim "<NAME>  USED" for 2 s, then it
+  own one-salvo rule counts only the ship's own shots. A player hit clears all shots, the twin's included; after the last
+  life the twin dissolves together with the ship.
+- SHIELD: every enemy bullet whose centre enters the shield bubble – the ellipse with the half axes 47 × 40 around
+  (x, 656) that is drawn around the ship (`LevelData.SHIELD_R`, `SHIELD_CY`, `in_shield`) – is absorbed as its head touches
+  the visible rim. It contains the hit box, so the ship cannot be hit while the shield is up.
+- HUD: a pill centred in the ground strip – READY (name, pulsing READY, key hint SHIFT / X; at full strength only while the
+  button works – dimmed in the intro banner, during a respawn and once the goal is met), ACTIVE (name, draining bar,
+  seconds left; blinking and red in the last 2 s; dimmed after the last life), USED (dim "<NAME>  USED" for 2 s, then it
   fades). Nothing on levels without a power-up. The intro banner of a power-up level adds "POWER-UP:  <NAME>". Colours:
   RAPID FIRE orange, TWIN violet, SHIELD cyan.
 - Look: RAPID FIRE – red-hot throbbing hull, glowing muzzles, longer exhaust; TWIN – the same ship, translucent violet

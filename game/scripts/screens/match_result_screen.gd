@@ -75,8 +75,9 @@ static func status_text(out: bool, won: bool) -> String:
 ## "14 – MARS 1" / "13 – BONUS ROUND" (level reached).
 static func level_text(n: int) -> String:
 	if n == LevelData.BONUS_LEVEL:
-		return "%d – BONUS ROUND" % n
-	return "%d – %s" % [n, String(LevelData.level(n)["name"]).to_upper()]
+		return "%d • BONUS ROUND" % n
+	# "•": Orbitron has no "·", and "–" would clash with level 20's own dash ("EARTH – FINAL BATTLE").
+	return "%d • %s" % [n, String(LevelData.level(n)["name"]).to_upper()]
 
 
 static func panel_rect(k: int) -> Rect2:

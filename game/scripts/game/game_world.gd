@@ -584,7 +584,7 @@ func _fire_twin() -> void:
 	events.append({"type": "shot_fired", "ship_id": ship_id, "count": int(ship()["count"]), "x": twin_x, "twin": true})
 
 
-## SHIELD: every enemy bullet whose centre comes within |dx| < SHIELD_DX and |dy| < SHIELD_DY of the ship is
+## SHIELD: every enemy bullet whose centre enters the shield ellipse (LevelData.in_shield – the drawn bubble) is
 ## absorbed – a superset of the hit box, so the ship cannot be hit while the shield is up.
 func _shield_absorb() -> void:
 	if not player_alive:
@@ -592,7 +592,7 @@ func _shield_absorb() -> void:
 	var i := 0
 	while i < bullets.size():
 		var b := bullets[i]
-		if absf(b.x - player_x) < LevelData.SHIELD_DX and absf(b.y - LevelData.PLAYER_Y) < LevelData.SHIELD_DY:
+		if LevelData.in_shield(b.x, b.y, player_x):
 			bullets.remove_at(i)
 			events.append({"type": "shield_absorbed", "x": b.x, "y": b.y})
 		else:

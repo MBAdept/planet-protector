@@ -401,6 +401,10 @@ func _handle_events() -> void:
 					audio.set_game_music_suspended(true)
 				_respawn_time = 0.0
 				_kick(9.0, 0.55)
+				# The last life: an active TWIN dissolves together with the ship (it only waits during a respawn).
+				if int(ev["lives_left"]) <= 0 and _twin != null and world.powerup_active(LevelData.PowerUp.TWIN):
+					_fx.impulse("twin_out", Vector2(world.twin_x, LevelData.PLAYER_Y), 1.0,
+						Hud.powerup_color(LevelData.PowerUp.TWIN))
 			"player_respawn":
 				_respawn_time = -1.0
 				_since_respawn = 0.0
@@ -507,7 +511,8 @@ func _update_powerup_views(dt: float) -> void:
 	_player.shield_flash = move_toward(_player.shield_flash, 0.0, dt * 5.0)
 	if _twin == null:
 		return
-	var on := world.powerup_active(LevelData.PowerUp.TWIN)
+	# After the last life the twin dissolves with the ship (the world keeps it ACTIVE, frozen, until the screen ends).
+	var on := world.powerup_active(LevelData.PowerUp.TWIN) and not _run_over()
 	# Materializes over 0.3 s, vanishes over 0.25 s (the FX layer draws the beam / burst around it).
 	_twin_vis = move_toward(_twin_vis, 1.0 if on else 0.0, dt / (0.3 if on else 0.25))
 	_twin.visible = _twin_vis > 0.0
@@ -521,6 +526,11 @@ func _update_powerup_views(dt: float) -> void:
 	_twin.bank = _twin_bank
 	_twin.alpha = _twin_vis * (blink if on else 1.0)
 	_twin.refresh()
+
+
+## The player lost the last life (the world waits for the explosion / is over).
+func _run_over() -> bool:
+	return world.state == GameWorld.State.GAME_OVER_WAIT or world.state == GameWorld.State.GAME_OVER
 
 
 func _sync_enemies() -> void:

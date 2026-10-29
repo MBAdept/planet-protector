@@ -8,10 +8,11 @@ extends Node2D
 
 const FxTex := preload("res://scripts/game/fx_tex.gd")
 
-## Shield bubble: half extents around the ship centre (the absorb zone is ±SHIELD_DX × ±SHIELD_DY, the ship
-## ≈ 70 × 48), and its centre offset (a little above the ship centre, so the dome rests on the ground).
-const SHIELD_R := Vector2(47.0, 40.0)
-const SHIELD_DY := -3.0
+## Shield bubble: half extents around the ship (the ship ≈ 70 × 48) and its centre offset (a little above the ship
+## centre, so the dome rests on the ground) – the same ellipse the world absorbs fireballs with (LevelData.SHIELD_R /
+## SHIELD_CY), so what the player sees is what the shield stops.
+const SHIELD_R := LevelData.SHIELD_R
+const SHIELD_DY := LevelData.SHIELD_CY - LevelData.PLAYER_Y
 const HEAT_COLOR := Color(1.0, 0.5, 0.14)
 
 ## Engine nozzle positions (game px, relative to the ship centre) per ship id: exact nozzle data from

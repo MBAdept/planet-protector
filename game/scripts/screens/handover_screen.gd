@@ -5,7 +5,7 @@ extends ScreenBase
 ##   shows NO lock information (hidden until LOCK REVEAL). Title music like the other setup screens; confirm also
 ##   with Space / A (Enter / Space / A / X / Y / Start), like the ship lock / ship select.
 ## - "turn" (before a level whenever the player changes): big "PLAYER k" in the player colour, "GET READY", the level
-##   ("LEVEL n – <name>", the bonus level "BONUS ROUND") under its planet, the player's score / lives (ship icons) /
+##   ("LEVEL n • <name>", the bonus level "BONUS ROUND") under its planet, the player's score / lives (ship icons) /
 ##   ship, the other player's score or GAME OVER, and with POWER-UPS on a level that has one "POWER-UP THIS LEVEL:
 ##   <NAME>" with its keys (Shift / pad X). Silent: it sits between two levels like the interlevel (whose confirm
 ##   sound may still ring) – the title music would only start for a few seconds and be cut by the level start, and
@@ -63,7 +63,7 @@ func _star_velocity() -> Vector2:
 
 
 func _tick(_delta: float) -> void:
-	if time >= CONFIRM_DELAY and InputRouter.confirm_pressed(kind == "locks"):
+	if guarded_confirm(kind == "locks", CONFIRM_DELAY):
 		sfx("menu_confirm")
 		finish("continue")
 
@@ -96,8 +96,9 @@ static func planet_image_h(planet: String) -> float:
 ## "LEVEL 7 – SATURN 1" / "LEVEL 13 – BONUS ROUND".
 static func level_line(n: int) -> String:
 	if n == LevelData.BONUS_LEVEL:
-		return "LEVEL %d  –  BONUS ROUND" % n
-	return "LEVEL %d  –  %s" % [n, String(LevelData.level(n)["name"]).to_upper()]
+		return "LEVEL %d  •  BONUS ROUND" % n
+	# "•": Orbitron has no "·", and "–" would clash with level 20's own dash ("EARTH – FINAL BATTLE").
+	return "LEVEL %d  •  %s" % [n, String(LevelData.level(n)["name"]).to_upper()]
 
 
 ## Status of the waiting player on the turn screen: "EARTH SAVED" (completed level 20), "GAME OVER" (out) or "".

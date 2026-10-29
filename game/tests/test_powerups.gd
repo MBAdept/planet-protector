@@ -462,9 +462,10 @@ func test_shield_absorbs_bullets_in_its_zone() -> void:
 	var w := _world(15, PU.SHIELD)
 	check(w.activate_powerup())
 	var px := w.player_x
+	# The ellipse: half axes 47 × 40 around (x, 656) – the drawn bubble.
 	var inside := [Vector2(px, LevelData.PLAYER_Y), Vector2(px + 33.0, LevelData.PLAYER_Y - 29.0),
-		Vector2(px - 33.0, LevelData.PLAYER_Y + 20.0)]
-	var outside := [Vector2(px + 35.0, LevelData.PLAYER_Y), Vector2(px, LevelData.PLAYER_Y - 31.0)]
+		Vector2(px - 46.0, LevelData.SHIELD_CY)]
+	var outside := [Vector2(px + 48.0, LevelData.SHIELD_CY), Vector2(px, LevelData.SHIELD_CY - 41.0)]
 	for p: Vector2 in inside:
 		w.add_bullet(p.x, p.y, 0.0, 0.0)
 	var kept: Array[GameWorld.Bullet] = []
@@ -475,6 +476,9 @@ func test_shield_absorbs_bullets_in_its_zone() -> void:
 	check_eq(ab.size(), 3, "three absorbed")
 	check(ab[0].has("x") and ab[0].has("y"))
 	check_eq(float(ab[1]["x"]), px + 33.0)
+	# The ship's hit box (21 × 15 around (x, 659)) lies inside the ellipse, so nothing can reach the ship.
+	for c: Vector2 in [Vector2(-21, -15), Vector2(21, -15), Vector2(-21, 15), Vector2(21, 15)]:
+		check(LevelData.in_shield(px + c.x, LevelData.PLAYER_Y + c.y, px), "hit box corner %s inside" % c)
 	check_eq(w.bullets.size(), 2, "the two outside the zone fly on")
 	for b in kept:
 		check(w.bullets.has(b))

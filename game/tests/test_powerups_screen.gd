@@ -353,6 +353,35 @@ func test_hud_pill_states() -> void:
 	check(g.goal_met)
 	check(float(gh.call("powerup_pill")["alpha"]) < 1.0, "dim after the goal")
 	gh.free()
+	# READY is only at full strength while the button works: dim in the intro banner and during a respawn.
+	var iw := GameWorld.new(8, 1, 0, 3, 3)
+	iw.powerup = PU.RAPID_FIRE
+	var ih := _hud(iw)
+	check_eq(iw.state, GameWorld.State.INTRO)
+	check(float(ih.call("powerup_pill")["alpha"]) < 1.0, "dim in the intro banner")
+	iw.auto_slots = false
+	iw.allow_enemy_fire = false
+	iw.start_combat()
+	check_eq(float(ih.call("powerup_pill")["alpha"]), 1.0, "full once the combat runs")
+	iw.add_bullet(iw.player_x, LevelData.PLAYER_Y, 0.0, 0.0)
+	iw.run_steps(1)
+	check_eq(iw.state, GameWorld.State.RESPAWN)
+	check(float(ih.call("powerup_pill")["alpha"]) < 1.0, "dim during a respawn")
+	iw.run_game_seconds(LevelData.RESPAWN_DELAY + 0.1)
+	check_eq(iw.state, GameWorld.State.PLAYING)
+	check_eq(float(ih.call("powerup_pill")["alpha"]), 1.0, "full again after the respawn")
+	ih.free()
+	# An ACTIVE pill dims once the last life is lost (the timer is frozen over the game-over moment).
+	var ow := _combat_world(11, PU.TWIN)
+	ow.lives = 1
+	var oh := _hud(ow)
+	check(ow.activate_powerup())
+	ow.add_bullet(ow.player_x, LevelData.PLAYER_Y, 0.0, 0.0)
+	ow.run_steps(1)
+	check_eq(ow.state, GameWorld.State.GAME_OVER_WAIT)
+	check_eq(String(oh.call("powerup_pill")["mode"]), "active")
+	check(float(oh.call("powerup_pill")["alpha"]) < 1.0, "dim after the last life")
+	oh.free()
 
 
 func test_blink_curve() -> void:

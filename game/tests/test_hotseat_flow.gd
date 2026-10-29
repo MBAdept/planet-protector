@@ -24,6 +24,14 @@ class SilentGameOver extends GameOverScreen:
 		pass
 
 
+## Records its sounds and finishes without Main.
+class RecordingGameOver extends GameOverScreen:
+	var sounds: Array[String] = []
+
+	func sfx(sfx_name: String) -> void:
+		sounds.append(sfx_name)
+
+
 # --- Helpers ---------------------------------------------------------------------------------------
 var _saved := {}
 var _screens: Array[Node] = []
@@ -416,6 +424,24 @@ func test_game_over_status_texts() -> void:
 	g._enter()
 	check(not g.get("_qualifies"), "a match shows no NEW HIGHSCORE (the entries come at its end)")
 	g.free()
+	# Confirming is silent when the (completely silent) arrival comes next – PLAYER 2 out in level 3 while PLAYER 1
+	# completed it – and plays menu_confirm otherwise.
+	_router_init()
+	for next_screen: String in ["arrival", "turn", ""]:
+		var r := RecordingGameOver.new()
+		r.setup({"level": 3, "player": 1, "other_status": "plays_on", "next_screen": next_screen})
+		r._enter()
+		r.sounds.clear()
+		r.time = GameOverScreen.CONFIRM_DELAY + 0.1
+		_router_step()
+		_key(KEY_ENTER, true)
+		_router_step()
+		r._tick(STEP)
+		_key(KEY_ENTER, false)
+		_router_step()
+		check(r.is_finished(), "confirm finishes (%s)" % next_screen)
+		check_eq(r.sounds.has("menu_confirm"), next_screen != "arrival", "confirm sound before %s" % next_screen)
+		r.free()
 	var g1 := SilentGameOver.new()
 	g1.setup({"level": 4, "qualifies": true})
 	g1._enter()
@@ -610,7 +636,8 @@ func test_main_setup_then_turns_skips_and_pause_quit() -> void:
 	check_eq(Run.current, 1, "PLAYER 2 plays level 1")
 	_end_level(m, 120, 40.0, 0)
 	check_eq(_scr(m), "game_over")
-	check_eq(_args_of(m), {"level": 1, "qualifies": false, "player": 1, "other_status": "plays_on"})
+	check_eq(_args_of(m), {"level": 1, "qualifies": false, "player": 1, "other_status": "plays_on",
+		"next_screen": "turn"})
 	check(Run.out, "PLAYER 2 is out")
 	check(Run.active, "the match goes on")
 	_finish(m, "continue")
@@ -733,7 +760,8 @@ func test_main_match_end_entries_and_highscores() -> void:
 			_finish(m, "continue")
 			check_eq(Run.current, 1)
 			_end_level(m, 5000, 800.0, 0)
-			check_eq(_args_of(m), {"level": 20, "qualifies": false, "player": 1, "other_status": "won"},
+			check_eq(_args_of(m), {"level": 20, "qualifies": false, "player": 1, "other_status": "won",
+				"next_screen": "victory"},
 				"PLAYER 1 saved Earth")
 			_finish(m, "continue")
 			check_eq(_scr(m), "victory")
@@ -814,7 +842,7 @@ func test_main_dev_command_line() -> void:
 		"interlevel": [{"player": "0"}, {"level": 5, "player": 0, "next_player": 1, "next_screen": "turn"}],
 		"bonus_result": [{"player": "1"}, {"level": 13, "player": 1, "next_player": -1}],
 		"game_over": [{"player": "1", "other-out": true}, {"level": 5, "qualifies": false, "player": 1,
-			"other_status": "out"}],
+			"other_status": "out", "next_screen": "match_result"}],
 		"victory": [{}, {"level": 20, "match": true}],
 		"mars_rules": [{"ship2": "4"}, {"level": 13, "ships": [0, 4]}],
 		"turn": [{"player": "1", "level": "9"}, {"kind": "turn", "player": 1, "level": 9}],

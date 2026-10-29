@@ -9,6 +9,9 @@ extends ScreenBase
 ## setup args: {"player": k (who locks, 0 / 1), "locked": Array[int] (initial locks, default none)}.
 
 const MAX_LOCKS := 3
+## Confirm counts only after this many seconds and a quiet moment (ScreenBase.guarded_confirm): a double tap on the
+## previous screen never toggles a lock or ends the locking here.
+const ENTRY_DELAY := 0.45
 const TITLE_Y := 52.0
 const SUB_Y := 85.0
 const WARN_Y := 129.0           ## centre of the LOOK AWAY banner
@@ -83,6 +86,15 @@ func toggle(id: int) -> bool:
 	return true
 
 
+## Label of the confirm key in the hint bar: what confirm does on the selected row.
+func confirm_hint() -> String:
+	if _sel == done_row():
+		return "Done"
+	if locked.has(_sel):
+		return "Unlock"
+	return "Lock" if locked.size() < MAX_LOCKS else "Max %d locked" % MAX_LOCKS
+
+
 ## The locks as reported by finished("done"): ascending ids.
 func result_locks() -> Array[int]:
 	var out := locked.duplicate()
@@ -95,12 +107,13 @@ func _tick(_delta: float) -> void:
 	if d.y != 0:
 		_sel = posmod(_sel + d.y, done_row() + 1)
 		sfx("menu_move")
-	if InputRouter.confirm_pressed(true):
+	if guarded_confirm(true, ENTRY_DELAY):
 		if _sel == done_row():
 			sfx("menu_confirm")
 			finish("done", {"locked": result_locks()})
 		elif toggle(_sel):
-			sfx("locked_hit" if locked.has(_sel) else "menu_move")   # the "clink" of the lock
+			# Locking and unlocking sound exactly like a cursor step: the player looking away must not hear the locks.
+			sfx("menu_move")
 		else:
 			sfx("menu_back")   # refused: already MAX_LOCKS ships locked
 			_refused_at = time
@@ -166,7 +179,7 @@ func _draw() -> void:
 		_draw_row(i, ramp(0.06 + i * 0.04, 0.25))
 	_draw_done(ramp(0.3, 0.25))
 	_draw_message()
-	var confirm_label := "Done" if _sel == done_row() else ("Unlock" if locked.has(_sel) else "Lock")
+	var confirm_label := confirm_hint()
 	UiKit.hint_bar(self, Vector2(CX, HINT_Y), [
 		[["UD"], "Select"], [["ENTER", "pad:A"], confirm_label], [["ESC", "pad:B"], "Back"],
 	], 14)

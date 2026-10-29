@@ -246,13 +246,14 @@ func _end_match() -> void:
 func test_ship_lock_toggle_limit_and_done() -> void:
 	_router_init()
 	var s: SpyLock = _open(SpyLock.new(), {"player": 0}) as SpyLock
+	_run(s, ShipLock.ENTRY_DELAY)   # past the hand-over guard (ScreenBase.guarded_confirm)
 	check(AudioManager.is_title_music_playing(), "title music on the setup screens")
 	check_eq([s.player, s.target(), s.selected()], [0, 1, 0], "PLAYER 1 locks for PLAYER 2, cursor on the first ship")
 	check_eq(s.title_text(), "PLAYER 1 LOCKS")
 	check_eq(s.warning_text(), "PLAYER 2 – LOOK AWAY!")
 	_tap(s, KEY_ENTER)
 	check_eq(s.locked, [0] as Array[int], "Enter locks the selected ship")
-	check_eq(s.sfx_calls.back(), "locked_hit", "the lock clinks")
+	check_eq(s.sfx_calls.back(), "menu_move", "locking sounds like a cursor step (the other player must not hear it)")
 	_tap(s, KEY_DOWN, 5)
 	check_eq(s.selected(), 5, "down 5×")
 	_tap(s, KEY_ENTER)
@@ -265,11 +266,13 @@ func test_ship_lock_toggle_limit_and_done() -> void:
 	check_eq(s.locked, [0, 5, 4] as Array[int], "a 4th lock is refused")
 	check_eq(s.sfx_calls, ["menu_back"] as Array[String], "refused with the back sound")
 	check(s.time - float(s.get("_refused_at")) < 0.1, "the refusal message starts")
+	check_eq(s.confirm_hint(), "Max 3 locked", "the hint does not offer a lock that would be refused")
 	check(s.results.is_empty(), "no finish")
 	_tap(s, KEY_DOWN, 2)
 	_tap(s, KEY_ENTER)
 	check_eq(s.locked, [0, 4] as Array[int], "Enter on a locked ship unlocks it")
-	check_eq(s.sfx_calls.back(), "menu_move", "unlock: soft blip")
+	check_eq(s.sfx_calls.back(), "menu_move", "unlock: the same soft blip")
+	check(not s.sfx_calls.has("locked_hit"), "no lock clink on the hidden lock screen")
 	_tap(s, KEY_UP, 2)
 	_tap(s, KEY_ENTER)
 	check_eq(s.locked, [0, 4, 3] as Array[int], "now a third one fits again")
@@ -284,6 +287,7 @@ func test_ship_lock_toggle_limit_and_done() -> void:
 	s.free()
 	# Up from the first ship wraps to DONE; DONE with no locks reports an empty list.
 	var s2: SpyLock = _open(SpyLock.new(), {"player": 1}) as SpyLock
+	_run(s2, ShipLock.ENTRY_DELAY)   # past the hand-over guard (ScreenBase.guarded_confirm)
 	_tap(s2, KEY_UP)
 	check_eq(s2.selected(), ShipLock.done_row(), "up wraps to DONE")
 	_tap(s2, KEY_ENTER)
@@ -294,6 +298,7 @@ func test_ship_lock_toggle_limit_and_done() -> void:
 func test_ship_lock_initial_locks_back_and_controller() -> void:
 	_router_init()
 	var s: SpyLock = _open(SpyLock.new(), {"player": 1, "locked": [3, 3, 9, -1, 1, 0, 5]}) as SpyLock
+	_run(s, ShipLock.ENTRY_DELAY)   # past the hand-over guard (ScreenBase.guarded_confirm)
 	check_eq(s.locked, [3, 1, 0] as Array[int], "initial locks: valid, unique, at most 3")
 	check_eq(s.result_locks(), [0, 1, 3] as Array[int])
 	check_eq([s.title_text(), s.warning_text()], ["PLAYER 2 LOCKS", "PLAYER 1 – LOOK AWAY!"])
@@ -302,6 +307,7 @@ func test_ship_lock_initial_locks_back_and_controller() -> void:
 	s.free()
 	_swap_in()
 	var p: SpyLock = _open(SpyLock.new(), {"player": 0}) as SpyLock
+	_run(p, ShipLock.ENTRY_DELAY)   # past the hand-over guard (ScreenBase.guarded_confirm)
 	_pad_tap(p, JOY_BUTTON_A)
 	check_eq(p.locked, [0] as Array[int], "A locks")
 	_pad_tap(p, JOY_BUTTON_X)
@@ -325,6 +331,7 @@ func test_ship_select_refuses_locked_ships() -> void:
 	check_eq(ShipSelect.initial_selection(9, []), 5, "clamped")
 	_router_init()
 	var s: SpySelect = _open(SpySelect.new(), {"player": 0, "locked": [4, 5], "ship": 4}) as SpySelect
+	_run(s, ShipSelect.ENTRY_DELAY)   # past the hand-over guard (ScreenBase.guarded_confirm)
 	check_eq(s.selected(), 0, "starts on the first free ship")
 	var previews: Array = s.get("_previews")
 	var flags: Array[bool] = []
@@ -346,6 +353,7 @@ func test_ship_select_refuses_locked_ships() -> void:
 	s.free()
 	# PLAYER 2 with ship 0 locked; the one-player screen has no locks at all.
 	var s2: SpySelect = _open(SpySelect.new(), {"player": 1, "locked": [0]}) as SpySelect
+	_run(s2, ShipSelect.ENTRY_DELAY)   # past the hand-over guard (ScreenBase.guarded_confirm)
 	check_eq(s2.selected(), 1, "PLAYER 2: ship 0 locked → FIGHTER")
 	check_eq(ShipSelect.player_title(1), "PLAYER 2  –  CHOOSE YOUR SHIP")
 	s2.free()
@@ -606,6 +614,41 @@ func test_handover_confirm_delay_keys_and_music() -> void:
 	AudioManager.stop_music()
 
 
+## The previous player's tapping cannot pass a hand-over point (ScreenBase.guarded_confirm): continuous presses every
+## 0.25 s never confirm the turn screen, the setup hand-over, a lock screen or the two-player ship select; one press after
+## a quiet moment does. A double tap from the previous screen does not act on the next one.
+func test_handover_guard_against_mashing() -> void:
+	_router_init()
+	_match(5, false)
+	var cases := [[SpyHandover.new(), {"kind": "turn", "player": 1, "level": 5}, KEY_ENTER],
+		[SpyHandover.new(), {"kind": "locks", "player": 1}, KEY_SPACE],
+		[SpyLock.new(), {"player": 1}, KEY_ENTER],
+		[SpySelect.new(), {"player": 1, "locked": [0]}, KEY_ENTER]]
+	for c: Array in cases:
+		var scr: Node = _open(c[0], c[1])
+		var label := "%s %s" % [scr.get_script().get_global_name(), c[1]]
+		var before: Array = (scr.get("locked") as Array).duplicate() if scr.get("locked") != null else []
+		for i in 12:   # 3 s of tapping at 4 Hz
+			_tap(scr, c[2])
+			_run(scr, 0.2)
+		check((scr.get("results") as Array).is_empty(), "%s: tapping never confirms" % label)
+		if scr.get("locked") != null:
+			check_eq(scr.get("locked"), before, "%s: tapping changed nothing" % label)
+		_run(scr, ScreenBase.HANDOVER_QUIET + 0.05)
+		_tap(scr, c[2])
+		var acted: bool = not (scr.get("results") as Array).is_empty() or \
+			(scr.get("locked") != null and scr.get("locked") != before)
+		check(acted, "%s: one press after a quiet moment acts" % label)
+		scr.free()
+	# The classic one-player ship select is not guarded (exactly as before).
+	var one: SpySelect = _open(SpySelect.new(), {"ship": 1}) as SpySelect
+	_tap(one, KEY_ENTER)
+	check_eq(one.results, [["confirm", {"ship": 1}]], "one player: confirm at once")
+	one.free()
+	_end_match()
+	AudioManager.stop_music()
+
+
 ## Hidden information: the hand-over between the two lock screens can not show a lock – its code never reads one
 ## (no "locked" setup arg, no Run.locked, no player_get(…, "locked")).
 func test_handover_shows_no_lock_information() -> void:
@@ -623,9 +666,9 @@ func test_handover_shows_no_lock_information() -> void:
 
 
 func test_handover_turn_texts_and_powerup() -> void:
-	check_eq(Handover.level_line(7), "LEVEL 7  –  SATURN 1")
-	check_eq(Handover.level_line(13), "LEVEL 13  –  BONUS ROUND")
-	check_eq(Handover.level_line(20), "LEVEL 20  –  EARTH – FINAL BATTLE")
+	check_eq(Handover.level_line(7), "LEVEL 7  •  SATURN 1")
+	check_eq(Handover.level_line(13), "LEVEL 13  •  BONUS ROUND")
+	check_eq(Handover.level_line(20), "LEVEL 20  •  EARTH – FINAL BATTLE")
 	check_eq([Handover.status_text(true, false), Handover.status_text(false, true), Handover.status_text(false, false)],
 		["GAME OVER", "EARTH SAVED", ""])
 	var expect := {1: LevelData.PowerUp.NONE, 6: LevelData.PowerUp.NONE, 7: LevelData.PowerUp.RAPID_FIRE,
@@ -680,8 +723,8 @@ func test_match_result_winner_and_draw() -> void:
 	check_eq([MatchResult.banner_text(0), MatchResult.banner_text(1), MatchResult.banner_text(-1)],
 		["PLAYER 1 WINS!", "PLAYER 2 WINS!", "DRAW!"])
 	check_eq([MatchResult.status_text(true, false), MatchResult.status_text(false, true)], ["GAME OVER", "EARTH SAVED"])
-	check_eq(MatchResult.level_text(13), "13 – BONUS ROUND")
-	check_eq(MatchResult.level_text(14), "14 – MARS 1")
+	check_eq(MatchResult.level_text(13), "13 • BONUS ROUND")
+	check_eq(MatchResult.level_text(14), "14 • MARS 1")
 	_router_init()
 	_match(1, true, {"score": 4800, "level": 20, "won": true}, {"score": 5120, "level": 17, "out": true})
 	var m: SpyResult = _open(SpyResult.new(), {}) as SpyResult

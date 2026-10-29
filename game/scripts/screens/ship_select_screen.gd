@@ -32,6 +32,8 @@ const BLURBS: Array[String] = [
 const TITLE_MAX_W := 660.0
 ## Seconds the refusal of a locked ship stays highlighted (shake + bright line).
 const REFUSE_TIME := 0.9
+## Two players: confirm counts only after this many seconds and a quiet moment (ScreenBase.guarded_confirm).
+const ENTRY_DELAY := 0.45
 
 var _sel := 0
 var _previews: Array[Control] = []
@@ -104,7 +106,10 @@ func _tick(_delta: float) -> void:
 		_sel = posmod(_sel + d.y * COLS, n)
 		sfx("menu_move")
 		_update_preview_highlight()
-	if InputRouter.confirm_pressed(true):
+	# Two players: the hand-over guard (ScreenBase.guarded_confirm), so a double tap on the previous screen never picks
+	# a ship here; one player: exactly as before.
+	var confirmed := InputRouter.confirm_pressed(true) if player < 0 else guarded_confirm(true, ENTRY_DELAY)
+	if confirmed:
 		if is_locked(_sel):
 			sfx("menu_back")   # refused: the other player locked this ship
 			_refused_at = time

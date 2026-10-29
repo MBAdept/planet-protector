@@ -47,7 +47,7 @@ func _tick(_delta: float) -> void:
 	if _stamped < stamp_count() and time >= stamp_time(_stamped):
 		sfx("locked_hit")
 		_stamped += 1
-	if time >= CONFIRM_DELAY and InputRouter.confirm_pressed(true):
+	if guarded_confirm(true, CONFIRM_DELAY):
 		sfx("menu_confirm")
 		finish("continue")
 
