@@ -3,7 +3,7 @@ extends Node
 ## played by the autopilot (pass --dev --autoplay [--invincible]), every other screen is confirmed by
 ## injected Enter presses. Logs every screen change with the run state and optionally saves screenshots.
 ##   godot --headless --path game res://dev/playthrough.tscn -- --dev --autoplay --invincible --level=1 \
-##       [--timescale=4] [--shots=/abs/dir] [--limit=1800] [--display=<0|1|2>]
+##       [--timescale=4] [--shots=/abs/dir] [--limit=1800] [--display=<0..4>]
 ## --display: display mode (SPEC §18), read by the Display autoload / Main; the log states the mode and the
 ## playfield width every level is played with.
 ## Ends (exit code 0) when the title screen is reached again after the run, or exit code 1 on timeout.

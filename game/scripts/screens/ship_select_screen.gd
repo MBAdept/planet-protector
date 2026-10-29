@@ -83,7 +83,7 @@ func _draw() -> void:
 	UiKit.text(self, Assets.font_body, Vector2(CX, 85), BLURBS[_sel], 17, Color(ship["accent"]).lerp(Color.WHITE, 0.45),
 		HORIZONTAL_ALIGNMENT_CENTER)
 	var rx := right_x() - 24.0   # top-right corner of the canvas (16:9 too)
-	UiKit.text(self, Assets.font_body, Vector2(rx, 30), "DIFFICULTY", 12, UiKit.COLOR_FAINT,
+	UiKit.text(self, Assets.font_body, Vector2(rx, 30), "DIFFICULTY", UiKit.label_size(12), UiKit.COLOR_FAINT,
 		HORIZONTAL_ALIGNMENT_RIGHT)
 	UiKit.text(self, Assets.font_title, Vector2(rx, 50), String(ShipData.difficulty(Settings.difficulty)["name"]),
 		15, UiKit.COLOR_ACCENT, HORIZONTAL_ALIGNMENT_RIGHT)
@@ -139,8 +139,31 @@ func _draw_tile(i: int) -> void:
 
 
 func _stat(x0: float, x1: float, baseline: float, label: String, value: String, label_col: Color, val_col: Color) -> void:
-	UiKit.text(self, Assets.font_body, Vector2(x0, baseline), label, 13, label_col)
-	UiKit.text(self, Assets.font_title, Vector2(x1, baseline), value, 13, val_col, HORIZONTAL_ALIGNMENT_RIGHT)
+	var fs := stat_size()
+	UiKit.text(self, Assets.font_body, Vector2(x0, baseline), label, fs, label_col)
+	UiKit.text(self, Assets.font_title, Vector2(x1, baseline), value, fs, val_col, HORIZONTAL_ALIGNMENT_RIGHT)
+
+
+## Font size of the stat rows (one size for all rows and cards): 13, lifted in the small modes 3/4
+## (UiKit.label_size) only as far as the widest row – SHOT SPEED 500 / SHOTS / SALVO 2 in a half-card column – keeps
+## STAT_GAP between label and value (never below 13, so modes 0–2 are unchanged).
+const STAT_SIZE := 13
+const STAT_GAP := 8.0
+## Widest label / value pairs of the half-card columns.
+const STAT_WORST := [["SHOT SPEED", "888"], ["SHOTS / SALVO", "8"], ["PIERCING", "YES"]]
+static func stat_size() -> int:
+	var col_w := TILE_W * 0.5 - 18.0 - 10.0   # lx = left + 18 … mx − 10 (and mx + 10 … right − 18)
+	var fs := UiKit.label_size(STAT_SIZE)
+	while fs > STAT_SIZE:
+		var fits := true
+		for row: Array in STAT_WORST:
+			if UiKit.text_width(Assets.font_body, row[0], fs) + UiKit.text_width(Assets.font_title, row[1], fs) \
+					+ STAT_GAP > col_w:
+				fits = false
+		if fits:
+			break
+		fs -= 1
+	return fs
 
 
 # --- Animated preview ----------------------------------------------------------------------------

@@ -132,7 +132,7 @@ func _draw_overlay() -> void:
 	var a := ramp(0.3, 0.4)
 	# Row 2: "no violet left" condition badge between the two demons
 	var c2 := Vector2(ILLU_X + 180, _cy(1) + 32)
-	UiKit.text(_overlay, Assets.font_body_bold, Vector2(c2.x, c2.y), "only if no violet is left", 13,
+	UiKit.text(_overlay, Assets.font_body_bold, Vector2(c2.x, c2.y), "only if no violet is left", UiKit.label_size(13),
 		Color(C_V, 0.95 * a), HORIZONTAL_ALIGNMENT_CENTER)
 	# Row 3: destroyed burst
 	var b := Vector2(ILLU_X + 330, _cy(2) - 6)
@@ -145,16 +145,16 @@ func _draw_overlay() -> void:
 		var r1 := 25.0 + 5.0 * pulse
 		_overlay.draw_line(b + Vector2.from_angle(ang) * r0, b + Vector2.from_angle(ang) * r1,
 			Color(1.0, 0.8, 0.4, 0.75 * a), 2.0, true)
-	UiKit.text(_overlay, Assets.font_body_bold, Vector2(b.x, _cy(2) + 37), "DESTROYED", 12, Color(UiKit.COLOR_GOLD, a),
+	UiKit.text(_overlay, Assets.font_body_bold, Vector2(b.x, _cy(2) + 37), "DESTROYED", UiKit.label_size(12), Color(UiKit.COLOR_GOLD, a),
 		HORIZONTAL_ALIGNMENT_CENTER)
 	# Row 4: locks on the older demons + "NEW" tag on the violet arrival
 	for x in [ILLU_X + 40, ILLU_X + 130]:
 		var lc := Vector2(x + 26, _cy(3) - 20)
 		_overlay.draw_circle(lc, 13, Color(0, 0, 0, 0.6 * a), true, -1.0, true)
 		UiKit.lock_icon(_overlay, lc + Vector2(0, -1), 15, Color(C_R, a))
-	UiKit.text(_overlay, Assets.font_body_bold, Vector2(ILLU_X + 300, _cy(3) + 37), "NEW ARRIVAL", 12,
+	UiKit.text(_overlay, Assets.font_body_bold, Vector2(ILLU_X + 300, _cy(3) + 37), "NEW ARRIVAL", UiKit.label_size(12),
 		Color(C_V, a), HORIZONTAL_ALIGNMENT_CENTER)
-	UiKit.text(_overlay, Assets.font_body_bold, Vector2(ILLU_X + 85, _cy(3) + 37), "LOCKED", 12, Color(C_R, a),
+	UiKit.text(_overlay, Assets.font_body_bold, Vector2(ILLU_X + 85, _cy(3) + 37), "LOCKED", UiKit.label_size(12), Color(C_R, a),
 		HORIZONTAL_ALIGNMENT_CENTER)
 
 
@@ -162,7 +162,7 @@ func _hit_arrow(from: Vector2, to: Vector2, label: String, col: Color) -> void:
 	var a := ramp(0.3, 0.4)
 	var c := Color(col, col.a * a)
 	UiKit.arrow(self, from, to, c, 3.0, 13.0)
-	UiKit.text(self, Assets.font_title, Vector2((from.x + to.x) * 0.5, from.y - 10), label, 13, c,
+	UiKit.text(self, Assets.font_title, Vector2((from.x + to.x) * 0.5, from.y - 10), label, UiKit.label_size(13), c,
 		HORIZONTAL_ALIGNMENT_CENTER)
 
 

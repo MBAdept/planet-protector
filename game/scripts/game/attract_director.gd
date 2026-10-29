@@ -103,7 +103,7 @@ func set_duration(d: float) -> void:
 	t_vulnerable = maxf(DURATION_MIN - HIT_TO_END, t_die - VULNERABLE_WINDOW)
 
 
-## The demo world: NORMAL, one life, invincible until t_vulnerable; `width` = playfield width (960 or 1280).
+## The demo world: NORMAL, one life, invincible until t_vulnerable; `width` = playfield width (960, 1280 or 1152).
 func make_world(width: float = LevelData.SCREEN_W) -> GameWorld:
 	var w := GameWorld.new(level, DIFFICULTY, ship_id, LIVES, world_seed, width)
 	w.invincible = true

@@ -6,10 +6,10 @@ extends Node2D
 ## Subclasses override `_enter()` (called from _ready) and `_tick(delta)` (per frame, until finished)
 ## and draw in `_draw()` as usual; the screen redraws every frame.
 ## Display modes (Display, SPEC §1): every screen is laid out on the classic 960 × 720 canvas (W, H, CX are its
-## content coordinates). On the 16:9 canvas (1280 × 720) the screen node is moved right by `ox`
-## (Display.center_offset() = 160), so that layout is centred; full-width elements (starfield, darkening
+## content coordinates). On the wider canvases (1280 × 720 in 16:9, 1152 × 720 in 16:10) the screen node is moved
+## right by `ox` (Display.center_offset() = 160 / 96), so that layout is centred; full-width elements (starfield, darkening
 ## overlays, planets anchored to a side, corner captions) use left_x() / right_x() / full_rect(), the canvas edges
-## in content coordinates (−160 … 1120 in 16:9, 0 … 960 in 4:3). The mode never changes while a screen is shown
+## in content coordinates (−160 … 1120 in 16:9, −96 … 1056 in 16:10, 0 … 960 in 4:3). The mode never changes while a screen is shown
 ## (Main re-creates the title after a display change).
 
 signal finished(result: String, data: Dictionary)
@@ -28,7 +28,7 @@ var args: Dictionary = {}
 ## Seconds since the screen entered the tree (real time).
 var time := 0.0
 var starfield: Starfield
-## Width of the logical canvas (Display.logical_width(): 960 or 1280) when the screen was created.
+## Width of the logical canvas (Display.logical_width(): 960, 1280 or 1152) when the screen was created.
 var sw := W
 ## Offset of the 960-wide content layout on the canvas (0 in 4:3, 160 in 16:9); also the node's position.x.
 var ox := 0.0

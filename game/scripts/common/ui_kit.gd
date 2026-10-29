@@ -392,14 +392,14 @@ static func glyph_width(token: String, size: int = 14) -> float:
 	if token.begins_with("pad:"):
 		var k := token.substr(4)
 		if k == "START" or k == "BACK":
-			return text_width(Assets.font_body_bold, _pad_label(k), int(size * 0.72)) + size * 1.1
+			return text_width(Assets.font_body_bold, _pad_label(k), label_size(int(size * 0.72))) + size * 1.1
 		return h * 1.2
 	match token:
 		"LEFT", "RIGHT", "UP", "DOWN":
 			return h
 		"LR", "UD":
 			return h * 1.45
-	return maxf(text_width(Assets.font_body_bold, _key_label(token), int(size * 0.8)) + size * 0.9, h)
+	return maxf(text_width(Assets.font_body_bold, _key_label(token), label_size(int(size * 0.8))) + size * 0.9, h)
 
 
 ## Draws a glyph with its left edge at x, vertically centred on cy. Returns its width.
@@ -432,7 +432,7 @@ static func glyph(ci: CanvasItem, token: String, x: float, cy: float, size: int 
 				panel_ex(ci, Rect2(dc.x - t, dc.y - a, t * 2, a * 2), Color(color, 0.85), Color(0, 0, 0, 0), 2, 0)
 			_:
 				panel_ex(ci, rect, fill, border, int(h * 0.5), 1)
-				var fs := int(size * 0.72)
+				var fs := label_size(int(size * 0.72))
 				text(ci, Assets.font_body_bold, Vector2(x + w * 0.5, baseline_for(Assets.font_body_bold, fs, cy)),
 					_pad_label(k), fs, color, HORIZONTAL_ALIGNMENT_CENTER)
 		return w
@@ -455,10 +455,16 @@ static func glyph(ci: CanvasItem, token: String, x: float, cy: float, size: int 
 			triangle(ci, c - Vector2(ts * 0.62, 0), Vector2.UP, ts, color)
 			triangle(ci, c + Vector2(ts * 0.62, 0), Vector2.DOWN, ts, color)
 		_:
-			var fs := int(size * 0.8)
+			var fs := label_size(int(size * 0.8))
 			text(ci, Assets.font_body_bold, Vector2(c.x, baseline_for(Assets.font_body_bold, fs, cy)),
 				_key_label(token), fs, color, HORIZONTAL_ALIGNMENT_CENTER)
 	return w
+
+
+## Font size of a tiny caption (key-cap labels, HUD labels): `size`, lifted to Display.min_text_size() in the small
+## display modes 3/4 (≥ 11 px on screen, e.g. the Steam Deck's 7" 1280×800 screen); unchanged in modes 0–2.
+static func label_size(size: int) -> int:
+	return maxi(size, Display.min_text_size())
 
 
 static func _key_label(token: String) -> String:

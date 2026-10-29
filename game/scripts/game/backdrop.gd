@@ -2,7 +2,7 @@ extends Node2D
 ## Static scenery of the game screen: sky gradient, background planet, ground strip (docs/SPEC.md §15).
 ## One script, four modes (separate nodes so the Starfield can sit between sky and planet).
 ## Everything is drawn once (no per-frame redraw); textures are cached statically.
-## Playfield width (SPEC §18.1): `width` (960 or 1280) – sky, vignette and haze span it, the ground strip is tiled
+## Playfield width (SPEC §18.1): `width` (960, 1280 or 1152) – sky, vignette and haze span it, the ground strip is tiled
 ## to it and the planet stays anchored to the top-right corner (same distance to the right edge as at 960).
 
 const FxTex := preload("res://scripts/game/fx_tex.gd")
@@ -27,7 +27,7 @@ static var _vignette: Texture2D
 var mode: Mode = Mode.SKY
 var level := 1
 var planet := "neptune"
-var width := LevelData.SCREEN_W     ## playfield width (960 or 1280)
+var width := LevelData.SCREEN_W     ## playfield width (960, 1280 or 1152)
 
 
 func setup(p_mode: Mode, p_level: int, p_width: float = LevelData.SCREEN_W) -> void:

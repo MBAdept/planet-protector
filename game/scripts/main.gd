@@ -13,10 +13,11 @@ extends Node
 ##   --screen=attract                        start a demo run (attract mode) directly
 ##   --attract-after=<s>                     idle time on the title before the demo starts (default 90)
 ##   --attract-level=N --attract-seed=S      fixed demo level (1–20 except 13) / random seed (deterministic captures)
-##   --screenshot=<abs path.png> [--screenshot-delay=<s>]   save a viewport PNG, then quit (16:9 modes: exactly the
-##                                           render size 1920×1080 / 2560×1440; mode 0: the window, 1280×960)
+##   --screenshot=<abs path.png> [--screenshot-delay=<s>]   save a viewport PNG, then quit (modes 1–4: exactly the
+##                                           render size 1920×1080 / 2560×1440 / 1280×800 / 1280×720; mode 0: the
+##                                           window, 1280×960)
 ##   --quit-after=<s>                        quit after s seconds
-##   --display=<0|1|2>                       display mode for this run (Display; not stored, no first-start screen)
+##   --display=<0..4>                        display mode for this run (Display; not stored, no first-start screen)
 ##   --first-start                           show the first-start display choice even if one is stored
 
 const GameScreenScript := preload("res://scripts/game/game_screen.gd")

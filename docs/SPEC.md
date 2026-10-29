@@ -27,7 +27,8 @@ Everything marked **[DESIGN]** is our own design decision (may be refined, but s
 - [RULE] Logical resolution 960 × 720; window scalable, aspect ratio preserved (stretch mode `canvas_items`, aspect `keep`, letterbox).
 - [RULE] Ground surface at **y = 685**. Player ship center at **y ≈ 659**. Player moves only horizontally, center x clamped to **[30, 930]**, base speed **350 px/s**.
 - [DESIGN – client request, widescreen round] The 16:9 display modes have a WIDER playfield (logical 1280 × 720); there only
-  the horizontal limits follow the screen edges (player x ∈ [30, W − 30] = [30, 1250]), see §18.1. Every rule in this document
+  the horizontal limits follow the screen edges (player x ∈ [30, W − 30] = [30, 1250]), see §18.1. [Steam Deck round] The
+  16:10 Steam Deck mode has a logical 1152 × 720 playfield with the same rules (player x ∈ [30, 1122]). Every rule in this document
   describes the classic width W = 960 and holds unchanged in the classic mode.
 - [RULE] HUD shows: score, lives, level, difficulty, play time as `MM:SS.t`.
 - Coordinates: game pixels, origin top-left, +y down.
@@ -330,42 +331,69 @@ TITLE ──90 s without input──▶ ATTRACT (demo run) ──over / any inpu
 ### 11.2 Display modes: first start, title DISPLAY, rendering, screens [DESIGN – client request, widescreen round]
 
 Modes (`Display.MODE_NAMES`, gameplay rules of the wider playfield: §18): 0 `WINDOW 4:3 (CLASSIC)`, 1 `FULLSCREEN 1920×1080
-(16:9)`, 2 `FULLSCREEN 2560×1440 (16:9)`. Stored in `user://settings.cfg` as `[video] display_mode` (0–2, default 0; anything
+(16:9)`, 2 `FULLSCREEN 2560×1440 (16:9)`; [DESIGN – client request, Steam Deck round] 3 `FULLSCREEN 1280×800 (16:10, STEAM
+DECK)` (logical 1152 × 720, rendered at exactly 1280 × 800, fills the Steam Deck's screen without bars) and 4 `FULLSCREEN
+1280×720 (16:9)` (logical 1280 × 720 like modes 1 / 2, rendered at exactly 1280 × 720). Mode numbers 0–2 keep their meaning,
+so stored settings stay valid. The logical width always comes from the mode (`Display.LOGICAL_SIZE`: 960 / 1280 / 1280 /
+1152 / 1280); no code may assume "not classic ⇒ 1280".
+Stored in `user://settings.cfg` as `[video] display_mode` (0–4, default 0; anything
 else – another type, a fraction like 1.5, NaN, out of range – reads as 0; a whole-number float like 1.0 is that mode) and `[video] display_chosen` (false until a mode was confirmed on the first-start screen). Files written
 before this version have neither key: mode 0, not chosen – the first-start screen appears once.
 - First-start screen (`scripts/screens/display_select_screen.gd`): shown instead of the title while `display_chosen` is false
-  (not with `--display`, `--screen` or `--level`; `--first-start` forces it). Logo, "CHOOSE YOUR DISPLAY", three cards with
-  the exact mode name, a one-line explanation (`Display.MODE_INFO`: classic window / wider 16:9 playfield) and a small icon in
-  the playfield's proportions, the note that the title menu can change it later, and the hint row. No live preview.
+  (not with `--display`, `--screen` or `--level`; `--first-start` forces it). Logo, "CHOOSE YOUR DISPLAY", one card per
+  mode (five since the Steam Deck round: compact 700 × 66 cards, 12 px apart, first card at y 178; logo 360 px wide) with
+  the exact mode name, a one-line explanation (`Display.MODE_INFO`: classic window / wider 16:9 playfield / Steam Deck
+  16:10 / light 720p picture) and a small icon in the playfield's proportions (4:3, 16:10, 16:9; fullscreen icons carry
+  their render height 1080p / 1440p / 800p / 720p), the note that the title menu can change it later, and the hint row.
+  The layout fits every canvas (960 / 1152 / 1280 × 720, `tests/test_steamdeck.gd`). No live preview.
   Monitor hint (Godot cannot change the monitor's resolution, the 16:9 picture is scaled to it): a line "Your screen: W×H"
-  under the cards (plus "not 16:9, so the 16:9 modes get black bars" when the monitor's aspect differs from 16:9 by more
-  than 1 %) and a gold badge BEST FIT FOR YOUR SCREEN on the 16:9 card that suits it (`Display.best_wide_mode`: 2560×1440
-  from a monitor of at least 2560 × 1440, else 1920×1080). Only a hint – the current mode (classic on a first start) stays
-  preselected; nothing of it is shown when the monitor size is unknown. Keys:
+  under the cards plus which fullscreen modes get black bars there (aspects within 1 %): a 16:9 monitor "16:9, so the
+  16:10 mode gets black bars at the sides", a 16:10 monitor "16:10, so the 16:9 modes get black bars, the 16:10 mode fills
+  it", any other "not 16:9 or 16:10, so the fullscreen modes get black bars" [Steam Deck review round]; and a gold badge BEST FIT FOR YOUR SCREEN on the card that suits it (`Display.best_mode`: a 1280 × 800 screen →
+  mode 3, a 1280 × 720 screen → mode 4, otherwise `Display.best_wide_mode`: 2560×1440 from a monitor of at least
+  2560 × 1440, else 1920×1080). Only a hint – the current mode (classic on a first start) stays
+  preselected, except on a first start on a 1280 × 800 / 1280 × 720 screen (best fit = mode 3 / 4, e.g. the Steam Deck,
+  where the classic 1280 × 960 window does not even fit): there the best-fit card is preselected, so A / Enter picks it
+  at once. Nothing of it is shown when the monitor size is unknown. Keys:
   §12. Confirm applies the mode at once (`Display.choose`), stores it, sets `display_chosen` → TITLE on the new canvas.
   Escape quits the game like on the title; nothing is stored, so the choice is offered again on the next start.
-- Title row DISPLAY `< WINDOW 4:3 (CLASSIC) | FULLSCREEN 1920×1080 (16:9) | FULLSCREEN 2560×1440 (16:9) >`: left/right (with
+- Title row DISPLAY `< WINDOW 4:3 (CLASSIC) | FULLSCREEN 1920×1080 (16:9) | FULLSCREEN 2560×1440 (16:9) | FULLSCREEN 1280×800
+  (16:10) | FULLSCREEN 1280×720 (16:9) >` (`Display.menu_name`: the mode names; the Steam Deck mode without its "STEAM DECK"
+  suffix, which does not fit the row – the line under the menu says "Steam Deck 16:10 playfield"): left/right (with
   the controlled repeat, wrapping) change a PENDING mode, drawn in the highlight colour, and the line under the menu says
   "Press ENTER to apply · <explanation>" (while the row is selected without a pending mode it shows the explanation of the
-  current one). For a 16:9 mode on a known monitor the explanation is "Wider 16:9 playfield · <fit>" with <fit> =
+  current one). For a fullscreen mode on a known monitor the explanation is "<short> · <fit>" (`Display.MODE_SHORT`: "Wider
+  16:9 playfield" / "Steam Deck 16:10 playfield") with <fit> =
   "best fit for your W×H screen" / "scaled down to your W×H screen" / "scaled up to your W×H screen" (`Display.fit_note`). Confirm (Enter / Space / A / X / Y / Start) applies a pending mode: stored, `display_chosen` set, window and
   canvas switched at once, the title is re-created on the new canvas with DISPLAY selected (no restart, no leftover nodes).
   Confirm without a pending mode only steps it to the next mode (like the other value rows), so applying always takes a
   deliberate second press. Leaving the row drops an unapplied choice. Escape still quits.
 - Rendering (`scripts/autoload/display.gd`; only the root window, plain Window/Viewport properties, the same on Linux and
   Windows): mode 0 = the project settings (canvas_items stretch of the 960 × 720 canvas, aspect keep, 1280 × 960 resizable
-  window). Modes 1 / 2: root `content_scale_mode = VIEWPORT` with `content_scale_size` = 1920 × 1080 / 2560 × 1440, aspect
-  keep – the root viewport IS that big whatever the monitor (Godot cannot switch the monitor's video mode) and the finished
-  image is scaled to the fullscreen window (letterbox on a non-16:9 monitor); `global_canvas_transform` scales the logical
-  1280 × 720 canvas by 1.5 / 2.0 onto it and `oversampling_override` = 1.5 / 2.0 rasterises the fonts for that scale, so
+  window; [Steam Deck review round] on a screen too small for it – e.g. 1280 × 800 – the first window of a run is fitted
+  to the usable area in 4:3 like a window coming back from a fullscreen mode, `Display.classic_window_size`). Modes 1–4: root `content_scale_mode = VIEWPORT` with `content_scale_size` = 1920 × 1080 / 2560 × 1440 /
+  1280 × 800 / 1280 × 720, aspect keep – the root viewport IS that big whatever the monitor (Godot cannot switch the
+  monitor's video mode) and the finished image is scaled to the fullscreen window (letterbox when the monitor's aspect
+  differs); `global_canvas_transform` scales the logical canvas (1280 × 720; 1152 × 720 in mode 3) by 1.5 / 2.0 /
+  1280 / 1152 = 1.111… / 1.0 onto it and `oversampling_override` = the same factor rasterises the fonts for that scale, so
   text, sprites and lines are drawn at the render resolution (crisp). The game has no CanvasLayer and never reads the viewport
-  rect, so nothing else is needed. A `--screenshot` (root viewport texture) is exactly 1920 × 1080 / 2560 × 1440 in modes
-  1 / 2 and the window (1280 × 960) in mode 0. The window is always changed through the root Window node (mode / size /
+  rect, so nothing else is needed. A `--screenshot` (root viewport texture) is exactly the render size in modes 1–4
+  (1920 × 1080 / 2560 × 1440 / 1280 × 800 / 1280 × 720) and the window (1280 × 960) in mode 0.
+- Small screens [Steam Deck round, review round]: in modes 3 / 4 (a 7" 1280 × 800 screen) the capital letters of every
+  text are at least 9 px tall on screen (`Display.MIN_CAP_PX`, Valve's Deck Verified guideline; measured as cap height =
+  font size × canvas scale × 0.69, the cap ratio of Exo 2 – Orbitron's is 0.72). Smaller captions are lifted there
+  (`UiKit.label_size`, `Display.min_text_size()`: 12 logical px in mode 3 = 13.3 px font / 9.2 px capitals, 14 px in
+  mode 4 = 9.7 px capitals): the HUD captions (SCORE, LIVES, LEVEL, DIFFICULTY, TIME, SHOTS LEFT, HITS; 10 px elsewhere –
+  the bonus counter values move right behind a longer caption, `Hud.counter_value_x`), the key-cap labels of the hint
+  glyphs (ENTER, ESC, START, …; 0.72 / 0.8 × the hint size elsewhere), the first-start BEST FIT badge and icon captions
+  (11), the level intro captions (12 / 13), the ship-select stat rows and DIFFICULTY caption (13 / 12), the title BEST
+  caption (13) and the Mars rules labels (12 / 13). Modes 0–2 keep their exact look (no minimum there). The window is always changed through the root Window node (mode / size /
   position), which keeps its viewport in sync. The mouse pointer (the game has no mouse control) is hidden while the window
   is fullscreen and visible in a window (also when the window manager changes the mode). `--display=<n>` (read by the Display autoload, so dev scenes get it too)
   forces a mode for one run without storing it and without the first-start screen.
 - Screens on the 16:9 canvas: every menu / sequence screen keeps its 960 × 720 layout in content coordinates (`ScreenBase.W`,
-  `CX`) and is moved right by `Display.center_offset()` (160), so panels, menus and texts are centred. Full-width elements
+  `CX`) and is moved right by `Display.center_offset()` (160; 96 on the 1152 canvas of mode 3), so panels, menus and texts
+  are centred. Everything below holds for the 1152 canvas in the same way (W = 1152). Full-width elements
   use the canvas edges (`ScreenBase.left_x() / right_x() / full_rect()`): the starfield (Starfield size =
   `Display.logical_size()`, cached textures and scroll state per size, same star density per pixel), darkening overlays,
   corner captions (title BEST line, ship-select DIFFICULTY) and side-anchored planets (interlevel lower right, bonus result
@@ -375,7 +403,7 @@ before this version have neither key: mode 0, not chosen – the first-start scr
   Arrival: the stars stream right → left over the full width, the message slides out past the left edge of the 1280 canvas,
   the planet zooms at the canvas centre.
 - Dev (`--screen=title`): `--select=<item>` and `--pending-display=<n>` (screenshots of the DISPLAY row);
-  `--screen=display_select` opens the first-start screen. Tests: `tests/test_display.gd`.
+  `--screen=display_select` opens the first-start screen. Tests: `tests/test_display.gd`, `tests/test_steamdeck.gd`.
 
 ## 12. Controls [RULE]
 
@@ -383,9 +411,13 @@ Keyboard: Left/Right arrows or A/D move; Space fires; Enter confirms; P or Escap
 (global); Escape on the title screen quits. Backspace deletes in name entry. [DESIGN] Escape in sub-menus = back; Space also
 confirms on title and ship select (mirrors controller A).
 [DESIGN – widescreen round] F11 per display mode (§11.2): WINDOW 4:3 toggles fullscreen ↔ window exactly as before
-(persisted in `[video] fullscreen`); the two 16:9 modes toggle fullscreen ↔ a centred 16:9 window, the largest of
-1920 × 1080 / 1600 × 900 / 1280 × 720 that fits the usable screen area (40 px left for the title bar), for this session only
-(the next start is fullscreen again, as the mode's name says) – the render resolution stays 1920 × 1080 / 2560 × 1440.
+(persisted in `[video] fullscreen`); the fullscreen modes toggle fullscreen ↔ a centred window of the mode's aspect, the
+largest of a list that fits the usable screen area (40 px left for the title bar): modes 1 / 2 1920 × 1080 / 1600 × 900 /
+1280 × 720; [Steam Deck round] mode 3 (16:10) 1280 × 800 / 1152 × 720, mode 4 (16:9) 1280 × 720 / 1152 × 648 (the render
+size itself first, so the picture is shown 1:1; 32 px left for the title bar, so 1152 × 720 fits the Deck desktop with
+KDE's 44 px panel, usable 1280 × 756); on a smaller area the biggest size of that aspect that fits
+(`Display.mode_window_size`). For this session only (the next start is fullscreen again, as the mode's name says) – the
+render resolution stays the mode's.
 The first-start screen (§11.2) uses the title's keys: up/down (also left/right) select, Enter / Space / A / X / Y / Start
 confirm, Escape quits, B is ignored.
 
@@ -574,7 +606,7 @@ class_name GameWorld extends RefCounted
 func _init(level: int, difficulty: int, ship_id: int, lives: int, rng_seed: int = 0, width: float = 960.0)
 func update(real_dt: float, move_axis: float, fire_held: bool) -> void   # does the fixed sub-stepping itself
 var events: Array[Dictionary]   # appended during update; consumer drains: {"type": String, ...}
-var width: float                # playfield width (§18.1): 960 classic, 1280 in the 16:9 modes; fixed for the world
+var width: float                # playfield width (§18.1): 960 classic, 1280 in the 16:9 modes, 1152 in 16:10; fixed
 ```
 No nodes, no autoload access except the static data classes. Event types (at least): `shot_fired{ship_id,count}`,
 `enemy_fire{x,y,count}`, `enemy_spawned{id,x,y,scale}`, `enemy_split{id,x,y,children:[ids]}`, `enemy_destroyed{id,x,y,scale,points}`,
@@ -588,15 +620,16 @@ GameWorld keeps its own score delta/lives/active_time; GameScreen syncs them int
 screenshots), `--screenshot=<path>` + `--screenshot-delay=<seconds>` (save a viewport PNG and quit), `--quit-after=<s>`.
 `Main` parses these (owner: ui); GameScreen honours invincible/autoplay through `Run.dev_flags`.
 
-## 18. Widescreen (16:9 display modes) [DESIGN – client request, widescreen round]
+## 18. Widescreen (16:9 / 16:10 display modes) [DESIGN – client request, widescreen round + Steam Deck round]
 
 Display modes, first-start choice, title row and rendering: §11.2. Mode 0 `WINDOW 4:3 (CLASSIC)` is exactly the game of
-§1–§17 (its simulation is bit-for-bit the classic one); the 16:9 modes 1 / 2 have a logical canvas of **1280 × 720** – the
-same height, a playfield 320 px wider (not pillarboxed). Highscores: one shared set of lists for all modes.
+§1–§17 (its simulation is bit-for-bit the classic one); the 16:9 modes 1 / 2 / 4 have a logical canvas of **1280 × 720** – the
+same height, a playfield 320 px wider (not pillarboxed); the 16:10 Steam Deck mode 3 has **1152 × 720** (192 px wider).
+Highscores: one shared set of lists for all modes.
 
 ### 18.1 Widescreen rules (wider playfield)
 
-W = playfield width = `Display.logical_width()`: 960 or 1280, fixed for a whole run (the mode can only change on the
+W = playfield width = `Display.logical_width()`: 960, 1280 or 1152, fixed for a whole run (the mode can only change on the
 first-start screen and in the title menu). GameScreen creates its world with `GameWorld.new(…, rng_seed, W)`; the demo
 (§11.1) uses the same width (`AttractDirector.make_world(W)`).
 - Unchanged, in px: every speed (player 350, enemies 62 × tempo, projectiles, fireballs), distance (spawn 160 / column 110 /
@@ -605,13 +638,13 @@ first-start screen and in the title menu). GameScreen creates its world with `Ga
 - Only the horizontal limits follow the screen edges with the classic margins (`LevelData.player_max_x(W)`,
   `player_start_x(W)`, `enemy_max_x(W)`; the left limits stay 30 / 50):
 
-  | what | classic (W = 960) | 16:9 (W = 1280) |
-  |------|-------------------|-----------------|
-  | player center x | [30, 930] | [30, 1250] |
-  | player start / respawn x | 480 | 640 (= W / 2) |
-  | enemy center x (turning, spawn search range, child clamping) | [50, 910] | [50, 1230] |
-  | enemy bullet removed sideways | x < −5 / x > 965 | x < −5 / x > 1285 |
-  | view: sideways fade band of a fireball | ≤ 9 / ≥ 951 | ≤ 9 / ≥ 1271 |
+  | what | classic (W = 960) | 16:9 (W = 1280) | 16:10 Steam Deck (W = 1152) |
+  |------|-------------------|-----------------|-----------------------------|
+  | player center x | [30, 930] | [30, 1250] | [30, 1122] |
+  | player start / respawn x | 480 | 640 (= W / 2) | 576 |
+  | enemy center x (turning, spawn search range, child clamping) | [50, 910] | [50, 1230] | [50, 1102] |
+  | enemy bullet removed sideways | x < −5 / x > 965 | x < −5 / x > 1285 | x < −5 / x > 1157 |
+  | view: sideways fade band of a fireball | ≤ 9 / ≥ 951 | ≤ 9 / ≥ 1271 | ≤ 9 / ≥ 1143 |
 
   The view takes the fade band from the width of the world it draws (`world.width`), never from the display mode, so a
   960 world (e.g. a dev gallery) keeps the classic band in a 16:9 session.
@@ -628,6 +661,9 @@ first-start screen and in the title menu). GameScreen creates its world with `Ga
 - Bots: the autoplay bot and the demo autopilot take every limit from the world (escape set over [30, W − 30], the candidate
   grids keep their density). The demo choreography (§11.1) is unchanged; simulated at W = 1280 (900 demos): at least 3 hits
   before the ship is hit in all of them, the full N in all but 3, ≈ 0.04 withdrawn salvos per demo, 15 ≤ total ≤ D ≤ 40 s.
-- Dev: `res://dev/capture.tscn` and `res://dev/playthrough.tscn` take `--display=<0|1|2>` (capture: the screenshot is the render
-  size 1920 × 1080 / 2560 × 1440 in modes 1 / 2). Tests: `tests/test_wide_playfield.gd` (limits at both widths, bots and demos at
-  1280, and digests of W = 960 runs recorded with the code before the widescreen change).
+  The same guarantees are checked at W = 1152 (`tests/test_steamdeck.gd`).
+- Dev: `res://dev/capture.tscn` and `res://dev/playthrough.tscn` take `--display=<0..4>` (capture: the screenshot is the render
+  size 1920 × 1080 / 2560 × 1440 / 1280 × 800 / 1280 × 720 in modes 1–4). Tests: `tests/test_wide_playfield.gd` (limits at both
+  widths, bots and demos at 1280, and digests of W = 960 runs recorded with the code before the widescreen change),
+  `tests/test_steamdeck.gd` (limits, bots and demos at 1152; digests of W = 960 and W = 1280 runs recorded before the Steam
+  Deck change, so modes 0 / 1 / 2 are proven bit-for-bit unchanged).

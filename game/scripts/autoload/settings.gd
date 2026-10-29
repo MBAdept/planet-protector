@@ -4,8 +4,8 @@ extends Node
 ## load unchanged; longer names in a hand-edited file are cut to NAME_MAX on load (sanitize_name).
 ## Volumes (SPEC §14): MUSIC VOLUME / EFFECTS VOLUME in percent, 0–100 in VOLUME_STEP steps, default 100 (the
 ## original mix). They scale the Music / SFX bus (AudioManager.volume_db); the ON/OFF options still mute on top.
-## Display (client request, widescreen round): display_mode 0/1/2 = Display.Mode (0 = the classic 4:3 window,
-## default) and display_chosen (false until the player confirmed a mode on the first-start screen). Files written
+## Display (client request, widescreen round; Steam Deck round): display_mode 0–4 = Display.Mode (0 = the
+## classic 4:3 window, default; 3 / 4 = the Steam Deck 1280×800 and the 1280×720 modes) and display_chosen (false until the player confirmed a mode on the first-start screen). Files written
 ## before these keys existed read as mode 0, not chosen – so that screen appears once.
 
 signal changed
@@ -21,6 +21,8 @@ const VOLUME_MAX := 100
 const DEFAULT_VOLUME := 100
 ## Menu item ids of the two volume options (title menu and pause overlay).
 const VOLUME_ITEMS: Array[String] = ["music_volume", "sfx_volume"]
+## Number of display modes: Display.MODE_COUNT itself (one source; valid stored values 0 … DISPLAY_MODES − 1).
+const DISPLAY_MODES: int = preload("res://scripts/autoload/display.gd").MODE_COUNT
 
 var difficulty := 1
 var music_on := true
@@ -28,7 +30,8 @@ var sfx_on := true
 var fullscreen := false
 var music_volume := DEFAULT_VOLUME   ## percent, multiple of VOLUME_STEP
 var sfx_volume := DEFAULT_VOLUME     ## percent, multiple of VOLUME_STEP
-var display_mode := 0               ## Display.Mode: 0 classic 4:3 window, 1 / 2 fullscreen 16:9 (1080 / 1440)
+var display_mode := 0               ## Display.Mode: 0 classic 4:3 window, 1 / 2 fullscreen 16:9 (1080 / 1440),
+                                    ## 3 fullscreen 16:10 1280×800 (Steam Deck), 4 fullscreen 16:9 1280×720
 var display_chosen := false         ## the player confirmed a mode on the first-start screen
 ## File of the options (tests point it to a scratch file so the player's settings stay untouched).
 var settings_path := SETTINGS_PATH
@@ -98,7 +101,7 @@ func set_fullscreen(value: bool) -> void:
 	changed.emit()
 
 
-## Stores the display mode (Display.Mode, clamped to 0–2). Display.choose() applies it.
+## Stores the display mode (Display.Mode; invalid values → 0, see clean_display_mode). Display.choose() applies it.
 func set_display_mode(value: int) -> void:
 	display_mode = clean_display_mode(value)
 	save_settings()
@@ -112,7 +115,7 @@ func set_display_chosen(value: bool) -> void:
 	changed.emit()
 
 
-## A display mode as stored: an integer 0–2 (a whole-number float like 1.0 counts as that integer); anything else
+## A display mode as stored: an integer 0–4 (a whole-number float like 1.0 counts as that integer); anything else
 ## – another type, a fraction like 1.5, NaN, out of range – is a damaged file and falls back to 0 (classic), so a
 ## broken settings.cfg never starts the game fullscreen.
 static func clean_display_mode(value: Variant) -> int:
@@ -122,7 +125,7 @@ static func clean_display_mode(value: Variant) -> int:
 		value = int(value)
 	if not (value is int):
 		return 0
-	return value if value >= 0 and value <= 2 else 0
+	return value if value >= 0 and value < DISPLAY_MODES else 0
 
 
 ## Sets MUSIC VOLUME (clamped to 0–100, snapped to VOLUME_STEP). Saves and emits `changed` only if the value

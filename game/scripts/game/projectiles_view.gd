@@ -1,7 +1,7 @@
 extends Node2D
 ## Draws the world's projectiles via ProjectileArt.
 ## Mode SHOTS: own salvos. Mode BULLETS: enemy fireballs + ground splashes – this node lives inside a
-## clipping Control (0,0)-(W,685) (W = playfield width, 960 or 1280), so nothing of a fireball is ever drawn below
+## clipping Control (0,0)-(W,685) (W = playfield width, 960, 1280 or 1152), so nothing of a fireball is ever drawn below
 ## the ground.
 
 const FxTex := preload("res://scripts/game/fx_tex.gd")

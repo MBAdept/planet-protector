@@ -208,7 +208,7 @@ func test_settings_defaults_persistence_and_old_files() -> void:
 	bad.save(SCRATCH_CFG)
 	Settings.load_settings()
 	check_eq([Settings.display_mode, Settings.display_chosen], [0, false], "damaged values → 0 / not chosen")
-	for v in [7, -1, 3]:
+	for v in [7, -1, 5]:
 		check_eq(Settings.clean_display_mode(v), 0, "out of range %d → 0" % v)
 	check_eq(Settings.clean_display_mode(1.0), 1, "float 1.0 → 1")
 	Settings.set_display_mode(9)
@@ -357,11 +357,13 @@ func test_first_start_screen_confirm_applies_and_stores() -> void:
 	check_eq(s.selected(), 0, "starts on the current (classic) mode")
 	_tap(s, KEY_DOWN)
 	check_eq(s.selected(), 1, "down → 1080")
-	_tap(s, KEY_DOWN)
-	_tap(s, KEY_DOWN)
+	for k in Display.MODE_COUNT - 1:
+		_tap(s, KEY_DOWN)
 	check_eq(s.selected(), 0, "wraps")
 	_tap(s, KEY_UP)
-	check_eq(s.selected(), 2, "up wraps to 1440")
+	check_eq(s.selected(), 4, "up wraps to the last mode (1280×720)")
+	_tap(s, KEY_LEFT)
+	_tap(s, KEY_LEFT)
 	_tap(s, KEY_LEFT)
 	check_eq(s.selected(), 1, "left/right select too")
 	check(s.results.is_empty(), "moving never confirms")
@@ -461,9 +463,13 @@ func test_title_display_item_pending_and_apply() -> void:
 	_tap(t, KEY_RIGHT)
 	check_eq(t._value("display"), Display.MODE_NAMES[2], "right → 2560×1440")
 	_tap(t, KEY_RIGHT)
+	check_eq(t._value("display"), "FULLSCREEN 1280×800 (16:10)", "right → 1280×800 (Steam Deck)")
+	_tap(t, KEY_RIGHT)
+	check_eq(t._value("display"), Display.MODE_NAMES[4], "right → 1280×720")
+	_tap(t, KEY_RIGHT)
 	check_eq(t._value("display"), Display.MODE_NAMES[0], "wraps")
 	_tap(t, KEY_LEFT)
-	check_eq(t.display_pending, 2, "left steps back")
+	check_eq(t.display_pending, 4, "left steps back")
 	# Leaving the row drops the unapplied choice.
 	_tap(t, KEY_DOWN)
 	_tap(t, KEY_UP)
@@ -633,10 +639,10 @@ func test_controller_on_first_start_and_title() -> void:
 
 
 # --- Review round: damaged values, mouse pointer, monitor hints, victory Earth ------------------------
-## SPEC §11.2: display_mode is 0–2, anything else reads as 0 – also fractions (1.5 must not start a 16:9 mode),
+## SPEC §11.2: display_mode is 0–4 (Steam Deck round; was 0–2), anything else reads as 0 – also fractions (1.5 must not start a 16:9 mode),
 ## NaN / infinities, strings and booleans.
 func test_damaged_display_mode_values_read_as_classic() -> void:
-	for v: Variant in [1.5, 2.9, 1.0001, 0.5, -0.5, NAN, INF, -INF, 3.0, -1.0, "1", true, null, [1], Vector2i(1, 1)]:
+	for v: Variant in [1.5, 2.9, 1.0001, 0.5, -0.5, NAN, INF, -INF, 5.0, -1.0, "1", true, null, [1], Vector2i(1, 1)]:
 		check_eq(Settings.clean_display_mode(v), 0, "display_mode=%s → classic" % str(v))
 	for m in 3:
 		check_eq(Settings.clean_display_mode(m), m, "int %d" % m)
@@ -702,8 +708,10 @@ func test_first_start_screen_monitor_hint() -> void:
 			check_eq(s.selected(), m, "the current mode stays preselected")
 			s.free()
 		var long_line := DisplaySelect.screen_line(Vector2i(2560, 1600))
-		check_eq(long_line, "Your screen: 2560×1600  ·  not 16:9, so the 16:9 modes get black bars")
-		check_eq(DisplaySelect.screen_line(Vector2i(1920, 1080)), "Your screen: 1920×1080")
+		# Steam Deck review round: the line also names the 16:10 mode (bars on 16:9, fills a 16:10 screen).
+		check_eq(long_line, "Your screen: 2560×1600  ·  16:10, so the 16:9 modes get black bars, the 16:10 mode fills it")
+		check_eq(DisplaySelect.screen_line(Vector2i(1920, 1080)),
+			"Your screen: 1920×1080  ·  16:9, so the 16:10 mode gets black bars at the sides")
 		check_eq(DisplaySelect.screen_line(Vector2i.ZERO), "")
 		var lw := UiKit.text_width(Assets.font_body, long_line, 15)
 		check(ScreenBase.CX - lw * 0.5 > -ox + 20.0 and lw < ScreenBase.W - 60.0, "mode %d: screen line fits" % m)

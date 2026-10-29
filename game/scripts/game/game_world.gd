@@ -5,10 +5,10 @@ extends RefCounted
 ## Time base: update() receives REAL seconds; the world converts them into game time
 ## (game_dt = real_dt * speed_factor) and advances in fixed sub-steps of LevelData.SIM_STEP.
 ## Everything is driven by one seeded RandomNumberGenerator, so a run is reproducible.
-## Playfield width (SPEC §18.1): `width` is 960 (classic 4:3) or 1280 (16:9) and fixed for the world's life. Only
-## the horizontal limits follow it (player clamp / start, enemy turning and spawn limits, sideways bullet removal);
-## every speed, distance, hit box, timing and lane y stays the same. With width 960 the world is bit-for-bit the
-## classic one.
+## Playfield width (SPEC §18.1): `width` is 960 (classic 4:3), 1280 (16:9) or 1152 (16:10, Steam Deck) and fixed
+## for the world's life. Only the horizontal limits follow it (player clamp / start, enemy turning and spawn
+## limits, sideways bullet removal); every speed, distance, hit box, timing and lane y stays the same. With width
+## 960 the world is bit-for-bit the classic one.
 
 enum State { INTRO, PLAYING, RESPAWN, CLEARING, COMPLETE, GAME_OVER_WAIT, GAME_OVER }
 
@@ -92,7 +92,7 @@ var level := 1
 var difficulty := 1
 var ship_id := 0
 var speed_factor := 1.0
-## Playfield width in px (SPEC §18.1): LevelData.SCREEN_W (960) or the 16:9 width 1280. Never narrower than 960.
+## Playfield width in px (SPEC §18.1): LevelData.SCREEN_W (960), 1280 (16:9) or 1152 (16:10). Never narrower than 960.
 var width := LevelData.SCREEN_W
 var rng := RandomNumberGenerator.new()
 

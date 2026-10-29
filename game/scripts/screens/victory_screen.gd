@@ -39,7 +39,7 @@ static func earth_asset() -> String:
 
 
 ## Diameter (logical px) of the risen victory Earth on a canvas canvas_w wide: it fills the canvas width
-## (960 in 4:3, 1280 in 16:9).
+## (960 in 4:3, 1280 in 16:9, 1152 in the 16:10 Steam Deck mode).
 static func earth_diameter(canvas_w: float) -> float:
 	return 960.0 * canvas_w / W
 
@@ -51,7 +51,7 @@ func _tick(_delta: float) -> void:
 
 
 func _draw() -> void:
-	# Earth rising from below, big, with a soft atmosphere glow. It fills the canvas width (960 or 1280) and always
+	# Earth rising from below, big, with a soft atmosphere glow. It fills the canvas width (960, 1280 or 1152) and always
 	# shows the same cap height (its top at y = 425 once risen).
 	var rise := 1.0 - ramp(0.0, 3.5)
 	var d := earth_diameter(sw)

@@ -6,8 +6,9 @@ extends Node
 ##     --path game res://dev/capture.tscn -- --level=7 --ship=0 --difficulty=1 --autoplay --invincible \
 ##     --out=/abs/path/prefix --at=3.0,6.5 [--when=split --delay=0.15] [--seed=3] [--quit-after=20] [--pause-at=4]
 ## --hit-at=T forces a player hit at T seconds.
-## --display=<0|1|2>: display mode (SPEC §18): 0 classic 4:3 (screenshot = window size), 1 / 2 the 16:9 modes with the
-## 1280 px wide playfield (screenshot = 1920×1080 / 2560×1440). Without it the stored mode counts.
+## --display=<0..4>: display mode (SPEC §18): 0 classic 4:3 (screenshot = window size), 1 / 2 / 4 the 16:9 modes and 3 the
+## 16:10 Steam Deck mode (1152 px playfield, screenshot 1280×800); 1 / 2 / 4 have the
+## 1280 px wide playfield (screenshot = 1920×1080 / 2560×1440 / 1280×720). Without it the stored mode counts.
 ## --at: capture times in seconds since start. --when: capture once when a condition first holds
 ## (split | explosion | bullets | respawn | clearing | stage | flash | materialize) plus --delay seconds.
 

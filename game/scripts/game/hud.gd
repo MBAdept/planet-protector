@@ -4,13 +4,15 @@ extends Node2D
 ## banner, level-clear banner, respawn hint and the pause overlay (with the MUSIC / EFFECTS VOLUME rows, SPEC
 ## §12/§14; GameScreen handles their input). Attract mode (demo, SPEC §11.1): the values
 ## come from the demo world (a demo never writes Run), plus the DEMO / PRESS ANY BUTTON overlay.
-## Playfield width (SPEC §18.1): `width` (960 or 1280). The top bar spans it (SCORE / LIVES on the left, LEVEL
+## Playfield width (SPEC §18.1): `width` (960, 1280 or 1152 – from the display mode). The top bar spans it (SCORE / LIVES on the left, LEVEL
 ## centred, DIFFICULTY / TIME at the same distance from the right edge as at 960); banners, the bonus counters, the
 ## pause overlay and the demo overlay are centred at width / 2.
 
 const FxTex := preload("res://scripts/game/fx_tex.gd")
 
 const BAR_H := 40.0
+## Captions of the top bar / bonus counters (SCORE, LIVES, …); UiKit.label_size lifts them in the small modes 3/4.
+const LABEL_SIZE := 10
 const C_LABEL := Color(0.58, 0.66, 0.82, 0.9)
 const C_VALUE := Color(0.93, 0.96, 1.0)
 const C_ACCENT := Color(1.0, 0.68, 0.25)
@@ -31,7 +33,7 @@ const PAUSE_ROWS := [
 
 var world: GameWorld
 var level := 1
-var width := LevelData.SCREEN_W   ## playfield width (960 or 1280)
+var width := LevelData.SCREEN_W   ## playfield width (960 / 1280 / 1152)
 var paused := false
 var pause_sel := 0          ## selected volume row of the pause overlay (GameScreen.PAUSE_ITEMS)
 var anim := 0.0             ## real seconds (banner animation)
@@ -95,7 +97,7 @@ func _right() -> float:
 	return width - LevelData.SCREEN_W
 
 
-## Shift of centred blocks laid out for 960 (0 at 960, 160 at 1280).
+## Shift of centred blocks laid out for 960 (0 at 960, 160 at 1280, 96 at 1152).
 func _centre() -> float:
 	return (width - LevelData.SCREEN_W) * 0.5
 
@@ -180,7 +182,7 @@ func _draw_lives(pos: Vector2, n: int) -> void:
 
 
 func _label(pos: Vector2, s: String, align := HORIZONTAL_ALIGNMENT_LEFT, col := C_LABEL) -> void:
-	UiKit.text(self, _f_label, pos, s, 10, col, align)
+	UiKit.text(self, _f_label, pos, s, UiKit.label_size(LABEL_SIZE), col, align)
 
 
 func _value(pos: Vector2, s: String, size: int, col: Color, align := HORIZONTAL_ALIGNMENT_LEFT) -> void:
@@ -196,9 +198,16 @@ func _draw_bonus_counters() -> void:
 	draw_rect(r, Color(1.0, 0.68, 0.25, 0.35), false, 1.0)
 	_label(Vector2(318 + c, y + 4.0), "SHOTS LEFT")
 	var shots_col := C_VALUE if world.attempts > 10 else Color(1.0, 0.45, 0.35)
-	_value(Vector2(410 + c, y + 6.5), "%d" % world.attempts, 16, shots_col)
+	_value(Vector2(counter_value_x("SHOTS LEFT", 318.0, 410.0) + c, y + 6.5), "%d" % world.attempts, 16, shots_col)
 	_label(Vector2(498 + c, y + 4.0), "HITS")
-	_value(Vector2(540 + c, y + 6.5), "%d/%d" % [mini(world.destroyed, LevelData.BONUS_TARGET), LevelData.BONUS_TARGET], 16, C_ACCENT)
+	_value(Vector2(counter_value_x("HITS", 498.0, 540.0) + c, y + 6.5), "%d/%d" % [mini(world.destroyed, LevelData.BONUS_TARGET), LevelData.BONUS_TARGET], 16, C_ACCENT)
+
+
+## Left edge (960 layout) of a bonus counter value whose caption starts at label_x: value_x as designed, or right
+## after the caption when the small modes 3/4 lift the caption size (modes 0–2: always value_x).
+func counter_value_x(caption: String, label_x: float, value_x: float) -> float:
+	var lw := _f_label.get_string_size(caption, HORIZONTAL_ALIGNMENT_LEFT, -1, UiKit.label_size(LABEL_SIZE)).x
+	return maxf(value_x, label_x + lw + 8.0)
 
 
 # --- Banners -------------------------------------------------------------------------------------
@@ -231,12 +240,12 @@ func _draw_intro(t: float) -> void:
 	draw_texture_rect(FxTex.band(), Rect2(cx - band_w * 0.5, cy - 58.0, band_w, 3.0), false, Color(C_ACCENT, 0.7 * a))
 	draw_texture_rect(FxTex.band(), Rect2(cx - band_w * 0.5, cy + 55.0, band_w, 3.0), false, Color(C_ACCENT, 0.7 * a))
 	if world.is_bonus():
-		UiKit.text(self, _f_label, Vector2(cx, cy - 30.0), "LEVEL %d  ·  BONUS ROUND" % level, 13, Color(C_ACCENT, a), HORIZONTAL_ALIGNMENT_CENTER)
+		UiKit.text(self, _f_label, Vector2(cx, cy - 30.0), "LEVEL %d  ·  BONUS ROUND" % level, UiKit.label_size(13), Color(C_ACCENT, a), HORIZONTAL_ALIGNMENT_CENTER)
 		_glow_text(Vector2(cx, cy + 10.0), LevelData.BONUS_TITLE, 40, a, e)
 		UiKit.text(self, _f_body, Vector2(cx, cy + 42.0), "100 shots – destroy 20 demons", 20, Color(C_VALUE, a), HORIZONTAL_ALIGNMENT_CENTER)
 	else:
 		var planet_name: String = LevelData.PLANET_NAMES[_planet]
-		UiKit.text(self, _f_label, Vector2(cx, cy - 34.0), planet_name.to_upper() + "  ·  " + _difficulty_name(), 12,
+		UiKit.text(self, _f_label, Vector2(cx, cy - 34.0), planet_name.to_upper() + "  ·  " + _difficulty_name(), UiKit.label_size(12),
 			Color(C_ACCENT, a), HORIZONTAL_ALIGNMENT_CENTER)
 		_glow_text(Vector2(cx, cy + 12.0), "LEVEL %d" % level, 54, a, e)
 		UiKit.text(self, _f_body, Vector2(cx, cy + 44.0), String(LevelData.level(level)["name"]).to_upper(), 20,

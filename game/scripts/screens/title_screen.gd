@@ -3,7 +3,8 @@ extends ScreenBase
 ## SOUND EFFECTS / EFFECTS VOLUME / DISPLAY / HIGHSCORES / QUIT. Up/down selects, left/right changes values,
 ## confirm activates. Keyboard: Enter/Space confirm, Escape quits. Controller: A/X/Y/Start confirm, Select/Back →
 ## highscores, B is ignored. Options persist via Settings and act immediately.
-## DISPLAY (widescreen round): left/right (or confirm) picks a PENDING mode out of Display.MODE_NAMES – shown in
+## DISPLAY (widescreen round): left/right (or confirm) picks a PENDING mode out of Display.MODE_NAMES (shown as
+## Display.menu_name: the Steam Deck mode without its "STEAM DECK" suffix, which the line under the menu carries) – shown in
 ## the highlight colour with "Press ENTER to apply" below the menu; confirm applies it (Display.choose: stored,
 ## window/canvas switched at once) → finished("display") and Main re-creates the title on the new canvas with
 ## DISPLAY selected. Leaving the row drops an unapplied choice. For the 16:9 modes the line under the menu also
@@ -27,7 +28,7 @@ const LABELS := {"start": "START GAME", "difficulty": "DIFFICULTY", "music": "MU
 	"quit": "QUIT"}
 ## Binary ON/OFF items (left/right flips them).
 const TOGGLES: Array[String] = ["music", "sfx"]
-# Layout (content coordinates, 960 × 720 – centred on the 1280 × 720 canvas in the 16:9 modes): logo + tagline
+# Layout (content coordinates, 960 × 720 – centred on the 1280 / 1152 px wide canvas of modes 1–4): logo + tagline
 # on top, the 9-row menu panel (wide enough for the longest DISPLAY value), the DISPLAY line under it, the two
 # hint rows at the bottom.
 const LOGO_W := 600.0
@@ -233,7 +234,7 @@ func _value(item: String) -> String:
 		"sfx":
 			return "ON" if Settings.sfx_on else "OFF"
 		"display":
-			return Display.mode_name(display_pending)
+			return Display.menu_name(display_pending)
 	return ""
 
 
@@ -330,7 +331,7 @@ func _draw_best() -> void:
 		return
 	var diff_name := String(ShipData.difficulty(Settings.difficulty)["name"])
 	var bx := BEST_X + ox   # at the right edge of the canvas
-	UiKit.text(self, Assets.font_body, Vector2(bx, 32), "BEST · %s" % diff_name, 13, UiKit.COLOR_FAINT,
+	UiKit.text(self, Assets.font_body, Vector2(bx, 32), "BEST · %s" % diff_name, UiKit.label_size(13), UiKit.COLOR_FAINT,
 		HORIZONTAL_ALIGNMENT_RIGHT)
 	UiKit.text(self, Assets.font_title, Vector2(bx, 56), best_text(_best), BEST_SIZE, UiKit.COLOR_GOLD,
 		HORIZONTAL_ALIGNMENT_RIGHT)

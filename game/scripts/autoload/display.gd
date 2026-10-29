@@ -1,16 +1,20 @@
 extends Node
 ## Autoload "Display": display mode, logical canvas size and render resolution (docs/SPEC.md §1, §11, §12).
 ## Mode 0 is the classic 4:3 game exactly as specified by the client; modes 1 and 2 are 16:9 fullscreen with a
-## WIDER playfield (logical 1280×720) rendered at exactly 1920×1080 / 2560×1440.
+## WIDER playfield (logical 1280×720) rendered at exactly 1920×1080 / 2560×1440. Steam Deck round (SPEC §11.2, §18):
+## mode 3 is 16:10 fullscreen for the Steam Deck (logical 1152×720 rendered at exactly 1280×800, canvas scale
+## 1280 / 1152 = 1.111…), mode 4 is 16:9 fullscreen at 1280×720 (logical 1280×720, scale 1.0). The logical width
+## always comes from the mode (LOGICAL_SIZE): 960 / 1280 / 1280 / 1152 / 1280 – "wide" never implies 1280.
 ##
 ## Technique (all modes use the root window only – no extra viewport, no reparenting, plain cross-platform
 ## Window/Viewport properties, so it behaves the same in the Windows export):
 ## - Mode 0: root content_scale_mode CANVAS_ITEMS, content_scale_size 960×720, aspect KEEP – unchanged from the
 ##   original project settings (window 1280×960, resizable, F11 fullscreen = Settings.fullscreen).
-## - Modes 1/2: root content_scale_mode VIEWPORT with content_scale_size = the render size (1920×1080 /
-##   2560×1440), aspect KEEP: the root viewport itself is that big, whatever the monitor or window is, and Godot
-##   scales the finished image to the window (letterbox when the monitor is not 16:9). The logical 1280×720
-##   canvas is mapped onto it by the root's global canvas transform (scale 1.5 / 2.0), and fonts are rasterised
+## - Modes 1–4: root content_scale_mode VIEWPORT with content_scale_size = the render size (1920×1080 /
+##   2560×1440 / 1280×800 / 1280×720), aspect KEEP: the root viewport itself is that big, whatever the monitor or
+##   window is, and Godot scales the finished image to the window (letterbox when the monitor's aspect differs).
+##   The logical canvas (1280×720, 1152×720 in mode 3) is mapped onto it by the root's global canvas transform
+##   (scale 1.5 / 2.0 / 1.111… / 1.0), and fonts are rasterised
 ##   for that scale (oversampling_override), so text, sprites and lines are drawn at the render resolution.
 ##   The game has no CanvasLayer and reads no viewport rect: all coordinates come from logical_size().
 ##   A screenshot of the root viewport is exactly the render size (render_size()).
@@ -18,42 +22,80 @@ extends Node
 ##   to live inside it, `_input` handlers (title idle timer, demo exit) would need input forwarding, and screenshots
 ##   a second path. The root technique needs none of that and switches at runtime by setting five properties.
 ## - Window changes go through the root Window node (mode / size / position) so its viewport follows at once.
-## - F11: mode 0 toggles fullscreen as before (persisted in Settings.fullscreen); modes 1/2 toggle between
-##   fullscreen and a 16:9 window (wide_window_size: the largest of 1920×1080 / 1600×900 / 1280×720 that fits
-##   the screen) for this session – the render resolution stays the chosen one.
+## - F11: mode 0 toggles fullscreen as before (persisted in Settings.fullscreen); modes 1–4 toggle between
+##   fullscreen and a window of the mode's aspect (mode_window_size: modes 1/2 the largest of 1920×1080 / 1600×900 /
+##   1280×720, mode 3 of 1280×800 / 1152×720, mode 4 of 1280×720 / 1152×648 that fits the screen) for this session –
+##   the render resolution stays the chosen one.
 ## - Mouse pointer: the game has no mouse control, so it is hidden while the window is fullscreen and shown in a
 ##   window (pointer_mode / update_pointer).
 ## - Monitor hints for the menus (Godot cannot change the monitor's resolution, the 16:9 picture is scaled to it):
-##   screen_size(), best_wide_mode() (1440p from a 2560×1440 monitor up, else 1080p), fit_note(), letterboxed_on().
-## The mode is stored in Settings.display_mode; `--display=<0|1|2>` forces one for this run without storing it.
+##   screen_size(), best_mode() (a 1280×800 screen → mode 3, a 1280×720 screen → mode 4, else best_wide_mode():
+##   1440p from a 2560×1440 monitor up, else 1080p), fit_note(), letterboxed_on().
+## - Small screens (modes 3/4, SPEC §11.2): min_text_size() lifts the small captions (HUD labels, key-cap labels of
+##   the hint glyphs, badges, stat rows) so that their capital letters are at least MIN_CAP_PX (9) pixels tall on
+##   screen – Valve's Deck Verified legibility bar at 1280×800: 12 logical px in mode 3, 14 in mode 4; 0 (no change)
+##   in modes 0–2.
+## The mode is stored in Settings.display_mode; `--display=<0..4>` forces one for this run without storing it.
 
 signal changed
 
-enum Mode { WINDOW_4_3, FULLSCREEN_1080, FULLSCREEN_1440 }
+enum Mode { WINDOW_4_3, FULLSCREEN_1080, FULLSCREEN_1440, FULLSCREEN_DECK, FULLSCREEN_720 }
 
-const MODE_COUNT := 3
+const MODE_COUNT := 5
 const LOGICAL_4_3 := Vector2i(960, 720)
 const LOGICAL_16_9 := Vector2i(1280, 720)
+const LOGICAL_16_10 := Vector2i(1152, 720)
+## Logical canvas per mode (all game / screen coordinates; the height is always 720).
+const LOGICAL_SIZE := {
+	Mode.WINDOW_4_3: LOGICAL_4_3,
+	Mode.FULLSCREEN_1080: LOGICAL_16_9,
+	Mode.FULLSCREEN_1440: LOGICAL_16_9,
+	Mode.FULLSCREEN_DECK: LOGICAL_16_10,
+	Mode.FULLSCREEN_720: LOGICAL_16_9,
+}
 const RENDER_SIZE := {
 	Mode.WINDOW_4_3: Vector2i(1280, 960),        # default window size, resizable
 	Mode.FULLSCREEN_1080: Vector2i(1920, 1080),
 	Mode.FULLSCREEN_1440: Vector2i(2560, 1440),
+	Mode.FULLSCREEN_DECK: Vector2i(1280, 800),
+	Mode.FULLSCREEN_720: Vector2i(1280, 720),
 }
 const MODE_NAMES := {
 	Mode.WINDOW_4_3: "WINDOW 4:3 (CLASSIC)",
 	Mode.FULLSCREEN_1080: "FULLSCREEN 1920×1080 (16:9)",
 	Mode.FULLSCREEN_1440: "FULLSCREEN 2560×1440 (16:9)",
+	Mode.FULLSCREEN_DECK: "FULLSCREEN 1280×800 (16:10, STEAM DECK)",
+	Mode.FULLSCREEN_720: "FULLSCREEN 1280×720 (16:9)",
+}
+## Value shown in the title menu's DISPLAY row (menu_name): the mode name, except the Steam Deck mode, whose full
+## name is too long for the row – there the line under the menu says "Steam Deck" (MODE_SHORT / MODE_INFO).
+const MENU_NAMES := {
+	Mode.FULLSCREEN_DECK: "FULLSCREEN 1280×800 (16:10)",
 }
 ## One-line explanation per mode (first-start screen, title).
 const MODE_INFO := {
 	Mode.WINDOW_4_3: "The original game in a resizable window.  F11 = fullscreen.",
 	Mode.FULLSCREEN_1080: "Wider 16:9 playfield, sharp Full HD picture.",
 	Mode.FULLSCREEN_1440: "Wider 16:9 playfield, extra sharp 1440p picture.",
+	Mode.FULLSCREEN_DECK: "Fills the Steam Deck's 1280×800 screen, 16:10 playfield.",
+	Mode.FULLSCREEN_720: "Wider 16:9 playfield, light 720p picture for small screens.",
 }
 ## Windowed 16:9 sizes (F11 in modes 1/2), largest first.
 const WIDE_WINDOW_SIZES: Array[Vector2i] = [Vector2i(1920, 1080), Vector2i(1600, 900), Vector2i(1280, 720)]
+## Windowed sizes of the small modes (F11 in modes 3/4), largest first: the render size itself (picture 1:1) or a
+## size of the same aspect that fits a smaller usable area (e.g. the Steam Deck desktop with its task bar).
+const DECK_WINDOW_SIZES: Array[Vector2i] = [Vector2i(1280, 800), Vector2i(1152, 720)]
+const SMALL_WIDE_WINDOW_SIZES: Array[Vector2i] = [Vector2i(1280, 720), Vector2i(1152, 648)]
+## Smallest height of a capital letter on screen in the small modes 3/4 (screen pixels; Valve's Deck Verified
+## guideline: the smallest characters at least 9 px tall at 1280×800). See min_text_size().
+const MIN_CAP_PX := 9.0
+## Cap height / font size of the UI fonts (OS/2 sCapHeight / unitsPerEm): Exo 2 0.69, Orbitron 0.72 – the smaller.
+const FONT_CAP_RATIO := 0.69
 ## Room left for the title bar when a window size is checked against the usable screen area.
 const DECORATION_ALLOWANCE := 40
+## Same for the fixed window sizes of the small modes 3/4 (DECK_WINDOW_SIZES / SMALL_WIDE_WINDOW_SIZES): a usual
+## title bar is 25–32 px, so 1152×720 still fits the Steam Deck desktop with KDE Plasma's 44 px panel (1280×756).
+const SMALL_DECORATION_ALLOWANCE := 32
 ## Mode 0 window (project settings window_width/height_override).
 const CLASSIC_WINDOW := Vector2i(1280, 960)
 
@@ -62,6 +104,8 @@ const MODE_SHORT := {
 	Mode.WINDOW_4_3: "The original game in a resizable window",
 	Mode.FULLSCREEN_1080: "Wider 16:9 playfield",
 	Mode.FULLSCREEN_1440: "Wider 16:9 playfield",
+	Mode.FULLSCREEN_DECK: "Steam Deck 16:10 playfield",
+	Mode.FULLSCREEN_720: "Wider 16:9 playfield",
 }
 ## A monitor counts as 16:9 within this relative aspect tolerance (1366×768 is 16:9, 1920×1200 is not).
 const ASPECT_TOLERANCE := 0.01
@@ -103,21 +147,21 @@ func is_wide() -> bool:
 	return mode() != Mode.WINDOW_4_3
 
 
-## Logical canvas size all game/screen coordinates live in: 960×720 (4:3) or 1280×720 (16:9).
+## Logical canvas size all game/screen coordinates live in: 960×720 (4:3), 1280×720 (16:9) or 1152×720 (16:10).
 func logical_size() -> Vector2i:
-	return LOGICAL_16_9 if is_wide() else LOGICAL_4_3
+	return logical_size_of(mode())
 
 
 func logical_width() -> float:
 	return float(logical_size().x)
 
 
-## Horizontal offset that centres a 960-wide layout on the current canvas (0 in 4:3, 160 in 16:9).
+## Horizontal offset that centres a 960-wide layout on the current canvas (0 in 4:3, 160 at 1280, 96 at 1152).
 func center_offset() -> float:
 	return (logical_width() - float(LOGICAL_4_3.x)) * 0.5
 
 
-## Resolution the game is rendered at: the window size in mode 0, 1920×1080 / 2560×1440 in modes 1/2.
+## Resolution the game is rendered at: the window size in mode 0, the mode's fixed render size in modes 1–4.
 func render_size() -> Vector2i:
 	return RENDER_SIZE[mode()]
 
@@ -127,18 +171,49 @@ static func is_wide_mode(m: int) -> bool:
 
 
 static func logical_size_of(m: int) -> Vector2i:
-	return LOGICAL_16_9 if is_wide_mode(m) else LOGICAL_4_3
+	return LOGICAL_SIZE[clampi(m, 0, MODE_COUNT - 1)]
 
 
-## Canvas scale of a 16:9 mode (render width / 1280): 1.5 or 2.0. Mode 0: 1 (the window stretch does the rest).
+## Canvas scale of a fixed-size mode (render width / logical width; the same vertically): 1.5 / 2.0 / 1.111… / 1.0.
+## Mode 0: 1 (the window stretch does the rest).
 static func canvas_scale_of(m: int) -> float:
 	if not is_wide_mode(m):
 		return 1.0
-	return float(RENDER_SIZE[m].x) / float(LOGICAL_16_9.x)
+	return float(RENDER_SIZE[m].x) / float(logical_size_of(m).x)
 
 
 static func mode_name(m: int) -> String:
 	return String(MODE_NAMES.get(clampi(m, 0, MODE_COUNT - 1)))
+
+
+## Value of the title DISPLAY row (MENU_NAMES, else the mode name).
+static func menu_name(m: int) -> String:
+	m = clampi(m, 0, MODE_COUNT - 1)
+	return String(MENU_NAMES.get(m, MODE_NAMES[m]))
+
+
+## The small modes (3 / 4: rendered at 1280 px wide, e.g. on the Steam Deck's 7" screen).
+static func is_small_mode(m: int) -> bool:
+	return m == Mode.FULLSCREEN_DECK or m == Mode.FULLSCREEN_720
+
+
+## Smallest font size (logical px) for small captions in mode m: capitals of at least MIN_CAP_PX on screen at its
+## canvas scale (12 in mode 3 = 13.3 px font, cap 9.2 px; 14 in mode 4, cap 9.7 px); 0 = no minimum (modes 0–2 keep
+## their look exactly).
+static func min_text_size_of(m: int) -> int:
+	if not is_small_mode(m):
+		return 0
+	return ceili(MIN_CAP_PX / (FONT_CAP_RATIO * canvas_scale_of(m)) - 1e-6)
+
+
+## Cap height in screen pixels of text drawn at logical font size `size` in mode m (the smaller UI font's ratio).
+static func cap_height_px(size: int, m: int) -> float:
+	return float(size) * canvas_scale_of(m) * FONT_CAP_RATIO
+
+
+## min_text_size_of() for the current mode (UiKit.label_size, HUD labels).
+func min_text_size() -> int:
+	return min_text_size_of(mode())
 
 
 ## Root window configuration of a mode (pure; apply_canvas() sets exactly these values).
@@ -156,10 +231,27 @@ static func canvas_config(m: int) -> Dictionary:
 ## Window size for F11 in a 16:9 mode: the largest of WIDE_WINDOW_SIZES that fits the usable screen area (with
 ## room for the title bar); on a smaller screen the biggest 16:9 size that fits.
 static func wide_window_size(usable: Vector2i) -> Vector2i:
-	for s in WIDE_WINDOW_SIZES:
-		if s.x <= usable.x and s.y + DECORATION_ALLOWANCE <= usable.y:
+	return _window_from(WIDE_WINDOW_SIZES, usable, Vector2i(16, 9))
+
+
+## Window size for F11 in mode m (1–4): modes 1/2 wide_window_size(); mode 3 the largest of DECK_WINDOW_SIZES
+## (16:10), mode 4 of SMALL_WIDE_WINDOW_SIZES (16:9) that fits (title bar room SMALL_DECORATION_ALLOWANCE), else the
+## biggest size of that aspect that fits.
+static func mode_window_size(m: int, usable: Vector2i) -> Vector2i:
+	match m:
+		Mode.FULLSCREEN_DECK:
+			return _window_from(DECK_WINDOW_SIZES, usable, Vector2i(16, 10), SMALL_DECORATION_ALLOWANCE)
+		Mode.FULLSCREEN_720:
+			return _window_from(SMALL_WIDE_WINDOW_SIZES, usable, Vector2i(16, 9), SMALL_DECORATION_ALLOWANCE)
+	return wide_window_size(usable)
+
+
+static func _window_from(sizes: Array[Vector2i], usable: Vector2i, aspect: Vector2i,
+		allowance: int = DECORATION_ALLOWANCE) -> Vector2i:
+	for s in sizes:
+		if s.x <= usable.x and s.y + allowance <= usable.y:
 			return s
-	return fit_aspect(usable, Vector2i(16, 9))
+	return fit_aspect(usable, aspect)
 
 
 ## Window size when the classic mode is entered from a 16:9 mode: 1280×960, or the biggest 4:3 size that fits.
@@ -196,13 +288,16 @@ func apply_canvas() -> void:
 
 
 ## Window mode / size of the current mode (not headless). Mode 0: fullscreen = Settings.fullscreen, otherwise a
-## window (1280×960 when coming from a 16:9 mode, else the size the player left it at). Modes 1/2: fullscreen,
-## or a 16:9 window after F11 (always the standard size, centred). Uses the root Window node (mode / size /
+## window (1280×960 when coming from a 16:9 mode, else the size the player left it at). The very first classic
+## window of a run is fitted to the screen too when the project's 1280×960 does not fit (classic_window_size, e.g. a
+## 1280×800 Steam Deck screen at the first start); on a big enough screen it is left exactly as Godot opened it. Modes 1–4: fullscreen,
+## or a window of the mode's aspect after F11 (mode_window_size, centred). Uses the root Window node (mode / size /
 ## position), never DisplayServer directly: the node resizes its viewport itself (DisplayServer.window_set_size
 ## alone leaves the root viewport at the old size on X11).
 func apply_window() -> void:
 	var kind := 1 if is_wide() else 0
-	if _window_kind == 1 and kind == 0:
+	var first_classic := _window_kind == -1 and kind == 0 and not Settings.fullscreen
+	if (_window_kind == 1 and kind == 0) or first_classic:
 		_classic_resize_pending = true
 	_window_kind = kind
 	if DisplayServer.get_name() == "headless" or not is_inside_tree():
@@ -217,7 +312,9 @@ func apply_window() -> void:
 		return
 	_classic_resize_pending = false
 	var usable := DisplayServer.screen_get_usable_rect(win.current_screen)
-	var sz := wide_window_size(usable.size) if kind == 1 else classic_window_size(usable.size)
+	if first_classic and win.size.x <= usable.size.x and win.size.y + DECORATION_ALLOWANCE <= usable.size.y:
+		return   # the first window fits: keep Godot's own size and placement (unchanged behaviour)
+	var sz := mode_window_size(mode(), usable.size) if kind == 1 else classic_window_size(usable.size)
 	_set_window_rect(Rect2i(usable.position + (usable.size - sz) / 2, sz))
 
 
@@ -278,6 +375,16 @@ static func best_wide_mode(screen: Vector2i) -> int:
 	return Mode.FULLSCREEN_1440 if screen.x >= big.x and screen.y >= big.y else Mode.FULLSCREEN_1080
 
 
+## The mode that suits a monitor best (BEST FIT badge, title note): a 1280×800 screen (Steam Deck) → mode 3, a
+## 1280×720 screen → mode 4, otherwise best_wide_mode(). -1 for an unknown monitor.
+static func best_mode(screen: Vector2i) -> int:
+	if screen == RENDER_SIZE[Mode.FULLSCREEN_DECK]:
+		return Mode.FULLSCREEN_DECK
+	if screen == RENDER_SIZE[Mode.FULLSCREEN_720]:
+		return Mode.FULLSCREEN_720
+	return best_wide_mode(screen)
+
+
 ## True for a monitor that is not 16:9 (the 16:9 modes show black bars there, aspect keep). False if unknown.
 static func letterboxed_on(screen: Vector2i) -> bool:
 	if screen.x <= 0 or screen.y <= 0:
@@ -285,15 +392,22 @@ static func letterboxed_on(screen: Vector2i) -> bool:
 	return absf(float(screen.x) / float(screen.y) / (16.0 / 9.0) - 1.0) > ASPECT_TOLERANCE
 
 
+## True for a 16:10 monitor (1280×800, 1920×1200, 2560×1600, 1440×900 …): the 16:10 mode fills it without bars.
+static func is_16_10(screen: Vector2i) -> bool:
+	if screen.x <= 0 or screen.y <= 0:
+		return false
+	return absf(float(screen.x) / float(screen.y) / 1.6 - 1.0) <= ASPECT_TOLERANCE
+
+
 ## "1920×1080" (the × as in the mode names).
 static func size_text(s: Vector2i) -> String:
 	return "%d×%d" % [s.x, s.y]
 
 
-## How a 16:9 mode's picture fits the monitor: "best fit for your W×H screen" (best_wide_mode), else "scaled down
+## How a fullscreen mode's picture fits the monitor: "best fit for your W×H screen" (best_mode), else "scaled down
 ## to / scaled up to your W×H screen". "" for the classic window or an unknown monitor.
 static func fit_note(m: int, screen: Vector2i) -> String:
-	var best := best_wide_mode(screen)
+	var best := best_mode(screen)
 	if not is_wide_mode(m) or best < 0:
 		return ""
 	if m == best:
@@ -303,7 +417,8 @@ static func fit_note(m: int, screen: Vector2i) -> String:
 	return ("scaled down to your %s screen" if k < 1.0 else "scaled up to your %s screen") % size_text(screen)
 
 
-## F11: mode 0 toggles Settings.fullscreen (persisted, as before); modes 1/2 toggle fullscreen ↔ 16:9 window.
+## F11: mode 0 toggles Settings.fullscreen (persisted, as before); modes 1–4 toggle fullscreen ↔ a window of the
+## mode's aspect.
 func toggle_fullscreen() -> void:
 	if is_wide():
 		wide_windowed = not wide_windowed
