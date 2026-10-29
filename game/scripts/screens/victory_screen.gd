@@ -2,6 +2,9 @@ extends ScreenBase
 ## Victory after level 20 (docs/SPEC.md §11): Earth big in the background, the exact
 ## LevelData.VICTORY_TEXT, final score and time. Confirm → finished("continue") (Main then opens the
 ## name entry if the score qualifies, else the highscores).
+## Two players (SPEC §19.2): setup {"match": true} – shown once when round 20 is over and someone saved Earth; the
+## stats row shows both players' scores (labels in the player colours; under each "EARTH SAVED" or the level the
+## player was out in) around the difficulty. Main then opens the match result.
 
 const CONFIRM_DELAY := 1.5
 ## The Earth drawn here: the in-game planet rendered again with a 1280 px sphere (tools/blender/planets_hd.py,
@@ -13,6 +16,7 @@ const EARTH_FALLBACK := "earth"
 
 var _sparks: Array[Vector4] = []   # x, y, speed, phase
 var _earth := EARTH_ASSET
+var _match := false
 
 
 func _enter() -> void:
@@ -21,6 +25,7 @@ func _enter() -> void:
 	# up to the window / render resolution and nearest sampling would show its texels as blocks.
 	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	_earth = earth_asset()
+	_match = bool(args.get("match", false))
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 2020
 	# Spread over the whole canvas (1280 wide in 16:9: proportionally more of them).
@@ -89,14 +94,30 @@ func _draw() -> void:
 	# Final stats
 	var sa := ramp(0.9 + lines.size() * 0.35, 0.5)
 	var sy := panel.end.y + 70.0
-	_stat(CX - 230, sy, "FINAL SCORE", Fmt.score(Run.score), UiKit.COLOR_GOLD, sa)
-	_stat(CX, sy, "PLAY TIME", Fmt.time(Run.active_time), UiKit.COLOR_TEXT, sa)
-	_stat(CX + 230, sy, "DIFFICULTY", Run.difficulty_name(), UiKit.COLOR_ACCENT, sa)
+	if _match:
+		for k in 2:
+			_stat(CX + (k * 2 - 1) * 230, sy, Run.player_label(k), Fmt.score(int(Run.player_get(k, "score"))),
+				UiKit.COLOR_GOLD, sa, UiKit.player_color(k))
+			_player_note(CX + (k * 2 - 1) * 230, sy + 30, k, sa)
+		_stat(CX, sy, "DIFFICULTY", Run.difficulty_name(), UiKit.COLOR_ACCENT, sa)
+	else:
+		_stat(CX - 230, sy, "FINAL SCORE", Fmt.score(Run.score), UiKit.COLOR_GOLD, sa)
+		_stat(CX, sy, "PLAY TIME", Fmt.time(Run.active_time), UiKit.COLOR_TEXT, sa)
+		_stat(CX + 230, sy, "DIFFICULTY", Run.difficulty_name(), UiKit.COLOR_ACCENT, sa)
 	draw_continue_hint("Continue", CONFIRM_DELAY)
 
 
-func _stat(x: float, baseline: float, label: String, value: String, col: Color, a: float) -> void:
-	UiKit.text(self, Assets.font_body, Vector2(x, baseline - 34), label, 15, Color(UiKit.COLOR_DIM, a),
+## Small line under a player's score (two players): "EARTH SAVED" or "GAME OVER · LEVEL n".
+func _player_note(x: float, baseline: float, k: int, a: float) -> void:
+	var won := bool(Run.player_get(k, "won"))
+	var s := "EARTH SAVED" if won else "GAME OVER · LEVEL %d" % int(Run.player_get(k, "level"))
+	UiKit.text_outlined(self, Assets.font_body_bold, Vector2(x, baseline), s, UiKit.label_size(13),
+		Color(UiKit.COLOR_GOOD if won else UiKit.COLOR_DIM, a), Color(0, 0, 0, 0.6 * a), 4, HORIZONTAL_ALIGNMENT_CENTER)
+
+
+func _stat(x: float, baseline: float, label: String, value: String, col: Color, a: float,
+		label_col: Color = UiKit.COLOR_DIM) -> void:
+	UiKit.text(self, Assets.font_body, Vector2(x, baseline - 34), label, 15, Color(label_col, a),
 		HORIZONTAL_ALIGNMENT_CENTER)
 	UiKit.text_outlined(self, Assets.font_title, Vector2(x, baseline), value, 28, Color(col, a), Color(0, 0, 0, 0.6 * a), 6,
 		HORIZONTAL_ALIGNMENT_CENTER)

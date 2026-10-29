@@ -3,7 +3,12 @@ extends Node
 ## played by the autopilot (pass --dev --autoplay [--invincible]), every other screen is confirmed by
 ## injected Enter presses. Logs every screen change with the run state and optionally saves screenshots.
 ##   godot --headless --path game res://dev/playthrough.tscn -- --dev --autoplay --invincible --level=1 \
-##       [--timescale=4] [--shots=/abs/dir] [--limit=1800] [--display=<0..4>]
+##       [--timescale=4] [--shots=/abs/dir] [--limit=1800] [--display=<0..4>] [--powerups]
+##       [--players=2 [--ship2=K]]
+## --players=2: a two-player match (SPEC §19.2, Main starts it at PLAYER 1's TURN screen of --level): every line of
+## the log names the player the screen is for (P1 / P2, "--" for the shared screens) and the run state is that of
+## the current player; the RESULT lines list both players. The name entries at its end are confirmed with the
+## empty name (PILOT) like in a one-player run.
 ## --display: display mode (SPEC §18), read by the Display autoload / Main; the log states the mode and the
 ## playfield width every level is played with.
 ## Ends (exit code 0) when the title screen is reached again after the run, or exit code 1 on timeout.
@@ -20,6 +25,7 @@ var _shot_taken := {}
 var _limit := 1800.0
 var _started_run := false
 var _log: Array[String] = []
+var _last_player := -1
 
 
 func _ready() -> void:
@@ -39,11 +45,18 @@ func _process(delta: float) -> void:
 	_t += real
 	_screen_t += real
 	var scr: String = String(_main.get("_screen_name"))
-	if scr != _last_screen:
+	if scr != _last_screen or _player() != _last_player:
 		var screen: Node = _main.get("_screen")
 		var world: Variant = screen.get("world") if screen != null and scr == "level" else null
-		_note("%7.1fs  %-12s level=%d score=%d lives=%d time=%s%s" % [_t, scr, Run.level, Run.score, Run.lives,
-			Fmt.time(Run.active_time), "  width=%d" % (world as GameWorld).width if world != null else ""])
+		# A match logs the level of the step (a TURN screen: the level about to be played), else Run.level.
+		var lvl := int(_main.get("_level")) if Run.is_two_player() else Run.level
+		_note("%7.1fs  %-12s %slevel=%d score=%d lives=%d time=%s%s" % [_t, scr, _player_tag(), lvl, Run.score,
+			Run.lives, Fmt.time(Run.active_time), "  width=%d" % (world as GameWorld).width if world != null else ""])
+		_last_player = _player()
+		if scr == "highscores" and screen != null:
+			var hs: Dictionary = screen.get("args")
+			_note("           list %s %s, highlighted rows %s" % [ShipData.difficulty(int(hs.get("difficulty", 0)))["name"],
+				"POWER-UPS" if bool(hs.get("powerups", false)) else "CLASSIC", hs.get("ranks", [hs.get("rank", -1)])])
 		if scr == "title" and _started_run:
 			_finish(0)
 			return
@@ -56,13 +69,26 @@ func _process(delta: float) -> void:
 		_finish(1)
 		return
 	if _shots != "" and DisplayServer.get_name() != "headless":
-		var key := "%s_%d" % [scr, Run.level]
+		var key := "%s_%d_%d" % [scr, Run.level, _player()]
 		var when := 6.0 if scr == "level" else (12.5 if scr == "arrival" else 1.2)
 		if not _shot_taken.has(key) and _screen_t >= when:
 			_shot_taken[key] = true
-			get_viewport().get_texture().get_image().save_png("%s/%02d_%s.png" % [_shots, Run.level, scr])
+			var tag := "_p%d" % (_player() + 1) if _player() >= 0 else ""
+			get_viewport().get_texture().get_image().save_png("%s/%02d_%s%s.png" % [_shots, Run.level, scr, tag])
 	if scr != "level":
 		_drive_menu(real)
+
+
+## Player the current screen is for in a match (Main's step "player"; −1: shared screen or one player).
+func _player() -> int:
+	return int(_main.get("_screen_player"))
+
+
+## "P1 " / "P2 " / "-- " in a match, nothing in a one-player run.
+func _player_tag() -> String:
+	if not Run.is_two_player():
+		return ""
+	return "P%d " % (_player() + 1) if _player() >= 0 else "-- "
 
 
 func _drive_menu(real: float) -> void:
@@ -90,6 +116,13 @@ func _note(s: String) -> void:
 
 
 func _finish(code: int) -> void:
-	_note("RESULT score=%d lives=%d time=%s" % [Run.score, Run.lives, Fmt.time(Run.active_time)])
+	if Run.is_two_player():
+		for k in 2:
+			_note("RESULT %s score=%d lives=%d level=%d time=%s%s%s" % [Run.player_label(k),
+				int(Run.player_get(k, "score")), int(Run.player_get(k, "lives")), int(Run.player_get(k, "level")),
+				Fmt.time(float(Run.player_get(k, "active_time"))), "  OUT" if Run.player_get(k, "out") else "",
+				"  WON" if Run.player_get(k, "won") else ""])
+	else:
+		_note("RESULT score=%d lives=%d time=%s" % [Run.score, Run.lives, Fmt.time(Run.active_time)])
 	Engine.time_scale = 1.0
 	get_tree().quit(code)

@@ -3,10 +3,13 @@ extends ScreenBase
 ## Controller: D-pad / stick (single axis, tie → horizontal) – horizontal moves the cursor, vertical
 ## changes the character; B deletes the last character; X / Y / Start confirm.
 ## Keyboard: typing appends, Backspace deletes, Enter confirms, arrow keys behave like the D-pad.
-## On confirm: Settings.insert_highscore(difficulty, {name, score, time, level, ship}) →
-## finished("done", {"difficulty": d, "rank": r}).
-## setup args: {"difficulty", "score", "time", "level", "ship"} (default: from Run),
+## On confirm: Settings.insert_highscore(difficulty, {name, score, time, level, ship}, powerups) →
+## finished("done", {"difficulty": d, "rank": r, "powerups": bool, "entry": the stored entry}).
+## setup args: {"difficulty", "score", "time", "level", "ship", "powerups"} (default: from Run),
 ##             optional "initial_name" (dev / screenshots).
+## Power-up runs (SPEC §19.3) go into their own lists: the rank line says "· POWER-UPS". Two players (SPEC §19.2):
+## setup {"player": k} – "PLAYER k" in the player colour above the title (the match's entries come one after the
+## other at its end, best score first).
 
 # One box per character: NameEditor.max_len() = 8 boxes (originally 5 × 72 px) centred at 960 × 720.
 const BOX_W := 64.0
@@ -14,6 +17,7 @@ const BOX_H := 84.0
 const BOX_GAP := 12.0
 const BOX_Y := 336.0
 const GLYPH_SIZE := 40          ## the widest character (W) leaves 8 px on each side of a box
+const PLAYER_LABEL_Y := 54.0    ## baseline of the two-player "PLAYER k" label
 
 var editor := NameEditor.new()
 var _diff := 1
@@ -21,6 +25,8 @@ var _score := 0
 var _time := 0.0
 var _level := 1
 var _ship := 0
+var _powerups := false
+var _player := -1
 var _rank := 1
 var _flash := {}        # box index → time of last change (for a short highlight)
 
@@ -32,8 +38,10 @@ func _enter() -> void:
 	_time = float(args.get("time", Run.active_time))
 	_level = int(args.get("level", Run.level))
 	_ship = int(args.get("ship", Run.ship_id))
+	_powerups = bool(args.get("powerups", Run.powerups))
+	_player = int(args.get("player", -1))
 	_rank = 1
-	for e in Settings.get_highscores(_diff):
+	for e in Settings.get_highscores(_diff, _powerups):
 		if int(e["score"]) > _score or (int(e["score"]) == _score and float(e["time"]) < _time):
 			_rank += 1
 	if args.has("initial_name"):   # dev / screenshots only
@@ -76,16 +84,25 @@ func _tick(_delta: float) -> void:
 
 func _confirm() -> void:
 	sfx("menu_confirm")
-	var entry := {"name": editor.final_name(), "score": _score, "time": _time, "level": _level, "ship": _ship}
-	var rank := Settings.insert_highscore(_diff, entry)
-	finish("done", {"difficulty": _diff, "rank": rank})
+	var entry := {"name": Settings.sanitize_name(editor.final_name()), "score": _score, "time": _time, "level": _level,
+		"ship": _ship}
+	var rank := Settings.insert_highscore(_diff, entry, _powerups)
+	finish("done", {"difficulty": _diff, "rank": rank, "powerups": _powerups, "entry": entry})
+
+
+## Caption under the title: "RANK 3  ·  NORMAL", power-up lists "RANK 3  ·  NORMAL  ·  POWER-UPS".
+static func rank_text(rank: int, diff: int, powerups: bool) -> String:
+	return "RANK %d  ·  %s%s" % [rank, ShipData.difficulty(diff)["name"], "  ·  POWER-UPS" if powerups else ""]
 
 
 # --- Drawing -------------------------------------------------------------------------------------
 func _draw() -> void:
+	if _player >= 0:
+		UiKit.text_spaced(self, Assets.font_title, Vector2(CX, PLAYER_LABEL_Y), Run.player_label(_player), 22, 7.0,
+			UiKit.player_color(_player), HORIZONTAL_ALIGNMENT_CENTER)
 	draw_title("NEW HIGHSCORE!", 104, 42, UiKit.COLOR_GOLD, UiKit.COLOR_ACCENT)
-	UiKit.text_spaced(self, Assets.font_title, Vector2(CX, 146), "RANK %d  ·  %s" % [_rank,
-		ShipData.difficulty(_diff)["name"]], 16, 4.0, UiKit.COLOR_HILITE, HORIZONTAL_ALIGNMENT_CENTER)
+	UiKit.text_spaced(self, Assets.font_title, Vector2(CX, 146), rank_text(_rank, _diff, _powerups), 16, 4.0,
+		UiKit.COLOR_HILITE, HORIZONTAL_ALIGNMENT_CENTER)
 	# Run summary
 	var sy := 214.0
 	_summary(CX - 220, sy, "SCORE", Fmt.score(_score), UiKit.COLOR_GOLD)

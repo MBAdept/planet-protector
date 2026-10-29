@@ -2,6 +2,10 @@ extends ScreenBase
 ## Rules screen shown before level 14 (docs/SPEC.md §8, §11): the global colour-stage lock of levels
 ## 14–16, illustrated with real EnemyArt demons in the violet / yellow / green stages of level 14.
 ## Enter (or X/Y/Start) confirms → finished("continue").
+## setup args: {"level": 13, "ships": Array (ids of the ships still in play; default [Run.ship_id])}. The locked-hit
+## line follows the ships (REFERENCE G): normal shots are used up, piercing shots fly on – a two-player match whose
+## ships differ in this gets both in a third line (SPEC §19.2, shown once per round for both players), and the
+## subtitle addresses both pilots.
 
 const CONFIRM_DELAY := 0.8
 const ROW_Y: Array[float] = [134.0, 244.0, 354.0, 464.0]
@@ -20,14 +24,13 @@ const C_R := Color(1.0, 0.4, 0.3)
 var _demons: Array[EnemyArt] = []
 var _overlay: Node2D
 var _rules: Array = []
+var _pilots := 1
 
 
 func _enter() -> void:
 	AudioManager.stop_music()
-	# REFERENCE G: normal shots are used up by a locked hit, piercing shots fly on.
-	var locked_line: Array = [["Locked hits are wasted shots: ", C_D], ["no points.", C_R]]
-	if bool(ShipData.ship(Run.ship_id)["piercing"]):
-		locked_line = [["Locked hits: ", C_D], ["no points.", C_R], [" Your shot flies on.", C_D]]
+	var ships: Array = args.get("ships", [Run.ship_id])
+	_pilots = maxi(ships.size(), 1)
 	_rules = [
 		[[["Every demon arrives ", C_W], ["VIOLET", C_V], [".", C_W]],
 			[["A hit turns it ", C_W], ["YELLOW", C_Y], [".", C_W]]],
@@ -35,8 +38,7 @@ func _enter() -> void:
 			[["when ", C_W], ["no violet demon", C_V], [" is left.", C_W]]],
 		[[["GREEN", C_G], [" demons can only be destroyed", C_W]],
 			[["when ", C_W], ["ALL", C_W], [" demons are green.", C_W]]],
-		[[["New ", C_W], ["VIOLET", C_V], [" arrivals lock the others again.", C_W]],
-			locked_line],
+		[[["New ", C_W], ["VIOLET", C_V], [" arrivals lock the others again.", C_W]]] + locked_lines(ships),
 	]
 	var V := LevelData.Stage.VIOLET
 	var Y := LevelData.Stage.YELLOW
@@ -59,6 +61,21 @@ func _enter() -> void:
 	_overlay.z_index = 2
 	_overlay.draw.connect(_draw_overlay)
 	add_child(_overlay)
+
+
+## The locked-hit line(s) of rule 4 for these ships (REFERENCE G: normal shots are used up by a locked hit,
+## piercing shots fly on): one line when they all behave alike, two when a match mixes both kinds.
+static func locked_lines(ships: Array) -> Array:
+	var piercing := 0
+	for id in ships:
+		if bool(ShipData.ship(int(id))["piercing"]):
+			piercing += 1
+	if piercing == 0:
+		return [[["Locked hits are wasted shots: ", C_D], ["no points.", C_R]]]
+	if piercing == ships.size():
+		return [[["Locked hits: ", C_D], ["no points.", C_R], [" Your shot flies on.", C_D]]]
+	return [[["Locked hits: ", C_D], ["no points.", C_R]],
+		[["Normal shots are wasted, piercing shots fly on.", C_D]]]
 
 
 func _cy(row: int) -> float:
@@ -98,8 +115,8 @@ func _base_y(i: int) -> float:
 # --- Drawing -------------------------------------------------------------------------------------
 func _draw() -> void:
 	draw_title("MARS: THE COLOUR LOCK", 62, 32, UiKit.COLOR_TEXT, Color(0.75, 0.4, 1.0))
-	UiKit.text(self, Assets.font_body, Vector2(CX, 98), "New rules for levels 14 – 16. Read carefully, pilot!", 18,
-		UiKit.COLOR_DIM, HORIZONTAL_ALIGNMENT_CENTER)
+	UiKit.text(self, Assets.font_body, Vector2(CX, 98), "New rules for levels 14 – 16. Read carefully, pilot%s!" %
+		("s" if _pilots > 1 else ""), 18, UiKit.COLOR_DIM, HORIZONTAL_ALIGNMENT_CENTER)
 	for row in 4:
 		var r := Rect2(40, ROW_Y[row], 880, ROW_H - 8)
 		var a := ramp(0.1 + row * 0.12, 0.35)
@@ -110,11 +127,12 @@ func _draw() -> void:
 		draw_circle(bc, 15, Color(0.75, 0.5, 1.0, 0.7 * a), false, 1.5, true)
 		UiKit.text(self, Assets.font_title, Vector2(bc.x, UiKit.baseline_for(Assets.font_title, 16, bc.y)),
 			str(row + 1), 16, Color(UiKit.COLOR_TEXT, a), HORIZONTAL_ALIGNMENT_CENTER)
-		# Text
+		# Text (two lines 28 px apart; a third line – mixed ships – packs them 25 px apart)
 		var lines: Array = _rules[row]
-		var y0 := r.get_center().y - 6.0
+		var lh := 28.0 if lines.size() <= 2 else 25.0
+		var y0 := r.get_center().y + 8.0 - lh * (lines.size() - 1) * 0.5
 		for li in lines.size():
-			_rich(TEXT_X, y0 + li * 28.0, lines[li], 19, a)
+			_rich(TEXT_X, y0 + li * lh, lines[li], 19, a)
 	# Arrows (under the demons)
 	var hit_col := Color(UiKit.COLOR_ACCENT, 0.95)
 	_hit_arrow(Vector2(ILLU_X + 112, _cy(0)), Vector2(ILLU_X + 248, _cy(0)), "HIT", hit_col)
