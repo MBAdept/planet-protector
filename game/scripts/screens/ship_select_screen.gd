@@ -3,7 +3,13 @@ extends ScreenBase
 ## that uses the real projectile graphics (ProjectileArt) with the ship's real projectile speed, salvo
 ## size and guided behaviour (guided shots follow the preview ship; one salvo at a time).
 ## Confirm (Enter/Space/A/X/Y/Start) → finished("confirm", {"ship": id}); B/Escape → finished("back").
-## setup args: {"ship": <initially selected id>}.
+## Two players (SPEC §19.2): the screen is shown once per player with a header "PLAYER k – CHOOSE YOUR SHIP" (the
+## player in the player colour). The ships the other player locked are darkened, their preview stands still and
+## carries a padlock with "LOCKED BY PLAYER j"; the cursor may rest on them, but confirm is refused (menu_back and
+## the line under the header says so, with a short shake). If the requested ship is locked, the selection starts on
+## the first free one. One player (player −1, nothing locked): exactly the classic screen.
+## setup args: {"ship": <initially selected id>, "player": k (−1 = one player, default), "locked": Array[int]
+##             (ships player k may not fly, default none)}.
 
 const COLS := 3
 const TILE_W := 286.0
@@ -22,16 +28,31 @@ const BLURBS: Array[String] = [
 	"A slow guided warhead that pierces everything.",
 ]
 
+## Two players: the header's maximum width (clear of the DIFFICULTY caption in the top-right corner of the 4:3 canvas).
+const TITLE_MAX_W := 660.0
+## Seconds the refusal of a locked ship stays highlighted (shake + bright line).
+const REFUSE_TIME := 0.9
+
 var _sel := 0
 var _previews: Array[Control] = []
+## Player who chooses (0 / 1), −1 in a one-player run.
+var player := -1
+## Ships this player may not fly (locked by the other player).
+var locked: Array[int] = []
+var _refused_at := -10.0
 
 
 func _enter() -> void:
 	AudioManager.play_title_music()
-	_sel = clampi(int(args.get("ship", 0)), 0, ShipData.SHIPS.size() - 1)
+	player = clampi(int(args.get("player", -1)), -1, 1)
+	for id in args.get("locked", []):
+		locked.append(int(id))
+	_sel = initial_selection(int(args.get("ship", 0)), locked)
 	for i in ShipData.SHIPS.size():
 		var p := ShipPreview.new()
 		p.ship_id = i
+		p.locked = locked.has(i)
+		p.lock_text = lock_caption(player)
 		var r := tile_rect(i)
 		p.position = Vector2(r.position.x + 12.0, r.position.y + 42.0)
 		p.size = Vector2(r.size.x - 24.0, PREVIEW_H)
@@ -39,6 +60,26 @@ func _enter() -> void:
 		add_child(p)
 		_previews.append(p)
 	_update_preview_highlight()
+
+
+## Ship the cursor starts on: the requested one (clamped), or the first free ship if that one is locked.
+static func initial_selection(requested: int, p_locked: Array) -> int:
+	var id := clampi(requested, 0, ShipData.SHIPS.size() - 1)
+	if not p_locked.has(id):
+		return id
+	for i in ShipData.SHIPS.size():
+		if not p_locked.has(i):
+			return i
+	return id
+
+
+## Currently highlighted ship id.
+func selected() -> int:
+	return _sel
+
+
+func is_locked(id: int) -> bool:
+	return locked.has(id)
 
 
 func _star_velocity() -> Vector2:
@@ -64,8 +105,12 @@ func _tick(_delta: float) -> void:
 		sfx("menu_move")
 		_update_preview_highlight()
 	if InputRouter.confirm_pressed(true):
-		sfx("menu_confirm")
-		finish("confirm", {"ship": _sel})
+		if is_locked(_sel):
+			sfx("menu_back")   # refused: the other player locked this ship
+			_refused_at = time
+		else:
+			sfx("menu_confirm")
+			finish("confirm", {"ship": _sel})
 	elif InputRouter.back_pressed():
 		sfx("menu_back")
 		finish("back")
@@ -78,10 +123,16 @@ func _update_preview_highlight() -> void:
 
 # --- Drawing -------------------------------------------------------------------------------------
 func _draw() -> void:
-	draw_title("CHOOSE YOUR SHIP", 54, 32)
 	var ship: Dictionary = ShipData.ship(_sel)
-	UiKit.text(self, Assets.font_body, Vector2(CX, 85), BLURBS[_sel], 17, Color(ship["accent"]).lerp(Color.WHITE, 0.45),
-		HORIZONTAL_ALIGNMENT_CENTER)
+	if player < 0:
+		draw_title("CHOOSE YOUR SHIP", 54, 32)
+	else:
+		_draw_player_title()
+	if is_locked(_sel):
+		_draw_locked_line()
+	else:
+		UiKit.text(self, Assets.font_body, Vector2(CX, 85), BLURBS[_sel], 17,
+			Color(ship["accent"]).lerp(Color.WHITE, 0.45), HORIZONTAL_ALIGNMENT_CENTER)
 	var rx := right_x() - 24.0   # top-right corner of the canvas (16:9 too)
 	UiKit.text(self, Assets.font_body, Vector2(rx, 30), "DIFFICULTY", UiKit.label_size(12), UiKit.COLOR_FAINT,
 		HORIZONTAL_ALIGNMENT_RIGHT)
@@ -89,9 +140,58 @@ func _draw() -> void:
 		15, UiKit.COLOR_ACCENT, HORIZONTAL_ALIGNMENT_RIGHT)
 	for i in ShipData.SHIPS.size():
 		_draw_tile(i)
+	# PLAYER 1's choice does not start the match yet (PLAYER 2 chooses next).
 	UiKit.hint_bar(self, Vector2(CX, 690), [
-		[["LR", "UD"], "Choose"], [["ENTER", "pad:A"], "Start"], [["ESC", "pad:B"], "Back"],
+		[["LR", "UD"], "Choose"], [["ENTER", "pad:A"], "Confirm" if player == 0 else "Start"], [["ESC", "pad:B"], "Back"],
 	], 14)
+
+
+## Two players: "PLAYER k" in the player colour, " – CHOOSE YOUR SHIP" in the text colour, one glowing line (sized
+## to TITLE_MAX_W, so it stays clear of the DIFFICULTY caption in the corner).
+func _draw_player_title() -> void:
+	var font := Assets.font_title_heavy
+	var pc := UiKit.player_color(player)
+	var parts := [[Run.player_label(player), pc.lerp(Color.WHITE, 0.2)], ["  –  CHOOSE YOUR SHIP", UiKit.COLOR_TEXT]]
+	var size := title_size(player)
+	var x := CX - UiKit.text_width(font, player_title(player), size) * 0.5
+	for part: Array in parts:
+		UiKit.text_glow(self, font, Vector2(x, 54), String(part[0]), size, part[1], pc)
+		x += UiKit.text_width(font, String(part[0]), size)
+
+
+## Header of the two-player screen and its font size (32 like the one-player title, smaller only if it would not fit).
+static func player_title(k: int) -> String:
+	return "%s  –  CHOOSE YOUR SHIP" % Run.player_label(k)
+
+
+static func title_size(k: int) -> int:
+	return UiKit.fit_size(Assets.font_title_heavy, player_title(k), 32, TITLE_MAX_W)
+
+
+## Line under the header while a locked ship is selected: padlock + "Locked by PLAYER j – choose a free ship"; after
+## a refused confirm it shakes briefly and lights up.
+func _draw_locked_line() -> void:
+	var font := Assets.font_body_bold
+	var s := locked_line_text(player)
+	var k := clampf(1.0 - (time - _refused_at) / REFUSE_TIME, 0.0, 1.0)
+	var shake := sin((time - _refused_at) * 48.0) * 7.0 * k * k
+	var w := UiKit.text_width(font, s, 17)
+	var x := CX - (w + 24.0) * 0.5 + shake
+	var col := UiKit.COLOR_DANGER.lerp(Color.WHITE, 0.35 * k)
+	UiKit.lock_icon(self, Vector2(x + 8.0, 79.0), 15.0, col)
+	UiKit.text(self, font, Vector2(x + 24.0, 85), s, 17, col)
+
+
+## "Locked by PLAYER j – choose a free ship" (j = the other player; one player: no names).
+static func locked_line_text(k: int) -> String:
+	if k < 0:
+		return "This ship is locked – choose a free ship"
+	return "Locked by %s – choose a free ship" % Run.player_label(1 - k)
+
+
+## Caption under the padlock of a locked preview: "LOCKED BY PLAYER j".
+static func lock_caption(k: int) -> String:
+	return "LOCKED" if k < 0 else "LOCKED BY %s" % Run.player_label(1 - k)
 
 
 func _draw_tile(i: int) -> void:
@@ -99,7 +199,15 @@ func _draw_tile(i: int) -> void:
 	var ship: Dictionary = ShipData.ship(i)
 	var accent: Color = ship["accent"]
 	var selected := i == _sel
-	if selected:
+	var lk := is_locked(i)
+	if lk:
+		# Locked by the other player: dark, with a red border (pulsing while the cursor rests on it).
+		var pulse := 0.5 + 0.5 * sin(time * 4.0)
+		var flash := clampf(1.0 - (time - _refused_at) / REFUSE_TIME, 0.0, 1.0) if selected else 0.0
+		UiKit.panel_ex(self, r, Color(0.06, 0.01, 0.02, 0.8), Color(UiKit.COLOR_DANGER,
+			(0.55 + 0.3 * pulse if selected else 0.28) + 0.3 * flash), 14, 2 if selected else 1,
+			Color(UiKit.COLOR_DANGER, 0.2 + 0.25 * flash) if selected else Color(0, 0, 0, 0), 16)
+	elif selected:
 		var pulse := 0.5 + 0.5 * sin(time * 4.0)
 		UiKit.panel_ex(self, r, Color(accent.darkened(0.82), 0.78), Color(accent.lightened(0.2), 0.75 + 0.25 * pulse),
 			14, 2, Color(accent, 0.30 + 0.12 * pulse), 18)
@@ -107,18 +215,24 @@ func _draw_tile(i: int) -> void:
 		UiKit.panel_ex(self, r, Color(UiKit.COLOR_PANEL, 0.62), Color(UiKit.COLOR_BORDER, 0.22), 14, 1)
 	# Name
 	var name_col := accent.lerp(Color.WHITE, 0.35) if selected else UiKit.COLOR_TEXT.darkened(0.12)
+	if lk:
+		name_col = UiKit.COLOR_FAINT.lerp(UiKit.COLOR_TEXT, 0.3 if selected else 0.0)
 	UiKit.text(self, Assets.font_title, Vector2(r.get_center().x, r.position.y + 30), String(ship["name"]), 18,
 		name_col, HORIZONTAL_ALIGNMENT_CENTER)
 	# Preview frame
 	var pr := Rect2(r.position + Vector2(12, 42), Vector2(r.size.x - 24, PREVIEW_H))
-	UiKit.panel_ex(self, pr.grow(1), Color(0, 0, 0, 0), Color(accent if selected else UiKit.COLOR_BORDER,
-		0.45 if selected else 0.16), 8, 1)
+	var frame_col := Color(accent if selected else UiKit.COLOR_BORDER, 0.45 if selected else 0.16)
+	if lk:
+		frame_col = Color(UiKit.COLOR_DANGER, 0.3)
+	UiKit.panel_ex(self, pr.grow(1), Color(0, 0, 0, 0), frame_col, 8, 1)
 	# Stats
 	var lx := r.position.x + 18.0
 	var rx := r.end.x - 18.0
 	var mx := r.get_center().x
 	var y := r.position.y + 202.0
 	var dim := 1.0 if selected else 0.8
+	if lk:
+		dim = 0.45
 	var label_col := Color(UiKit.COLOR_DIM, dim)
 	var val_col := Color(UiKit.COLOR_TEXT, dim)
 	_stat(lx, mx - 10.0, y, "SHOT SPEED", "%d" % int(ship["speed"]), label_col, val_col)
@@ -168,10 +282,13 @@ static func stat_size() -> int:
 
 # --- Animated preview ----------------------------------------------------------------------------
 ## Clipped preview area: the ship patrols left/right and keeps firing like a player holding fire.
+## A locked ship (two players) stands still in the middle, dark, under a padlock with lock_text.
 class ShipPreview extends Control:
 	var ship_id := 0
 	var preview_scale := 0.8
 	var selected := false
+	var locked := false
+	var lock_text := "LOCKED"
 	var _x := 0.0
 	var _target := 0.0
 	var _wait := 0.0
@@ -184,8 +301,8 @@ class ShipPreview extends Control:
 	func _ready() -> void:
 		clip_contents = true
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
-		# Optional engine glow (Assets.ship_glow_texture), drawn additively on top of the ship.
-		if Assets.ship_glow_texture(ship_id) != null:
+		# Optional engine glow (Assets.ship_glow_texture), drawn additively on top of the ship (not on a locked one).
+		if Assets.ship_glow_texture(ship_id) != null and not locked:
 			_glow = Node2D.new()
 			var mat := CanvasItemMaterial.new()
 			mat.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
@@ -194,6 +311,8 @@ class ShipPreview extends Control:
 			add_child(_glow)
 		_rng.seed = 4242 + ship_id * 97
 		_x = size.x * (0.3 + 0.4 * _rng.randf())
+		if locked:
+			_x = size.x * 0.5
 		_target = _x
 		_wait = _rng.randf_range(0.0, 0.4)
 
@@ -202,6 +321,9 @@ class ShipPreview extends Control:
 
 	func _process(delta: float) -> void:
 		_t += delta
+		if locked:
+			queue_redraw()   # stopped: no patrol, no shots (only the padlock pulses while selected)
+			return
 		var k := preview_scale
 		# Patrol: run to a random target at full ship speed, pause briefly, repeat.
 		var margin := 34.0
@@ -237,6 +359,9 @@ class ShipPreview extends Control:
 			Color(1, 1, 1, flicker * (1.0 if selected else 0.6)))
 
 	func _draw() -> void:
+		if locked:
+			_draw_locked()
+			return
 		var k := preview_scale
 		var accent: Color = ShipData.ship(ship_id)["accent"]
 		var a := 1.0 if selected else 0.62
@@ -251,3 +376,19 @@ class ShipPreview extends Control:
 		draw_texture_rect(tex, Rect2(Vector2(_x, _ship_y()) - sz * 0.5, sz), false, Color(1, 1, 1, 0.75 + 0.25 * a))
 		if not selected:
 			draw_rect(Rect2(Vector2.ZERO, size), Color(0, 0, 0, 0.25))
+
+	## Locked: the ship as a dark silhouette in the middle, a red padlock and "LOCKED BY PLAYER j" above it.
+	func _draw_locked() -> void:
+		var k := preview_scale
+		draw_rect(Rect2(Vector2.ZERO, size), Color(0.02, 0.0, 0.01, 0.7))
+		var tex := Assets.ship_texture(ship_id)
+		var sz := Vector2(80, 56) * k
+		draw_texture_rect(tex, Rect2(Vector2(_x, _ship_y()) - sz * 0.5, sz), false, Color(0.32, 0.3, 0.36, 0.55))
+		var pulse := 0.5 + 0.5 * sin(_t * 4.0) if selected else 0.0
+		var col := UiKit.COLOR_DANGER.lerp(Color.WHITE, 0.15 * pulse)
+		var c := Vector2(size.x * 0.5, 36.0)
+		UiKit.glow_spot(self, c, Vector2(46, 30), Color(UiKit.COLOR_DANGER, 0.14 + 0.08 * pulse))
+		UiKit.lock_icon(self, c, 26.0, Color(col, 0.95 if selected else 0.75))
+		var fs := UiKit.label_size(12)
+		UiKit.text(self, Assets.font_body_bold, Vector2(size.x * 0.5, 72.0), lock_text, fs,
+			Color(col, 0.95 if selected else 0.7), HORIZONTAL_ALIGNMENT_CENTER)

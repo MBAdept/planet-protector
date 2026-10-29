@@ -534,3 +534,61 @@ static func hint_bar(ci: CanvasItem, center: Vector2, items: Array, size: int = 
 		x += size * 0.6
 		text(ci, Assets.font_body, Vector2(x, baseline_for(Assets.font_body, size, center.y)), String(it[1]), size, color)
 		x += text_width(Assets.font_body, String(it[1]), size) + gap
+
+
+# --- Two-player screens (SPEC §19.2) --------------------------------------------------------------
+## A player ship sprite (Assets.ship_texture, 80 × 56 game px canvas) drawn `width` px wide, centred at `center`.
+static func ship_icon(ci: CanvasItem, ship_id: int, center: Vector2, width: float,
+		modulate: Color = Color.WHITE) -> void:
+	var sz := Vector2(width, width * 56.0 / 80.0)
+	ci.draw_texture_rect(Assets.ship_texture(ship_id), Rect2(center - sz * 0.5, sz), false, modulate)
+
+
+## Check mark (two strokes), `size` px wide, centred at `center`.
+static func check_icon(ci: CanvasItem, center: Vector2, size: float, color: Color) -> void:
+	var pts := PackedVector2Array([center + Vector2(-0.42, 0.02) * size, center + Vector2(-0.13, 0.3) * size,
+		center + Vector2(0.44, -0.32) * size])
+	ci.draw_polyline(pts, color, maxf(2.0, size * 0.15), true)
+
+
+## "Look away" pictogram: an eye (almond of two lid arcs, iris) crossed out by a slash, `size` px wide.
+static func eye_slash_icon(ci: CanvasItem, center: Vector2, size: float, color: Color) -> void:
+	var w := maxf(1.5, size * 0.085)
+	# Lid arcs through the corners (±size/2, 0) with an opening of 0.36·size: centre offset d, radius r.
+	var h := 0.36
+	var d := (0.25 - h * h * 0.25) / h
+	var r := d + h * 0.5
+	var a0 := atan2(-d, 0.5)
+	var a1 := atan2(-d, -0.5)
+	ci.draw_arc(center + Vector2(0, d) * size, r * size, a1, a0, 20, color, w, true)
+	ci.draw_arc(center - Vector2(0, d) * size, r * size, -a0, -a1, 20, color, w, true)
+	ci.draw_circle(center, size * 0.12, color, true, -1.0, true)
+	var s0 := center + Vector2(-0.4, -0.4) * size
+	var s1 := center + Vector2(0.4, 0.4) * size
+	ci.draw_line(s0, s1, Color(0, 0, 0, 0.7 * color.a), w * 3.0, true)
+	ci.draw_line(s0, s1, color, w * 1.3, true)
+
+
+## Rectangle of a look_away_banner (pill around icon + text), centred at `center`.
+static func look_away_rect(center: Vector2, s: String, size: int = 24) -> Rect2:
+	var w := text_width(Assets.font_title_heavy, s, size) + size * (1.35 + 0.5 + 1.8)
+	var h := size * 2.0
+	return Rect2(center.x - w * 0.5, center.y - h * 0.5, w, h)
+
+
+## Pulsing warning pill in a player colour, e.g. "PLAYER 2 – LOOK AWAY!" (eye_slash_icon + heavy text). `t` drives
+## the pulse; alpha fades the whole banner.
+static func look_away_banner(ci: CanvasItem, center: Vector2, s: String, color: Color, t: float, size: int = 24,
+		alpha: float = 1.0) -> void:
+	if alpha <= 0.0:
+		return
+	var font := Assets.font_title_heavy
+	var r := look_away_rect(center, s, size)
+	var pulse := 0.5 + 0.5 * sin(t * 5.0)
+	panel_ex(ci, r, Color(color.darkened(0.84), 0.9 * alpha), Color(color, (0.55 + 0.4 * pulse) * alpha),
+		int(r.size.y * 0.5), 2, Color(color, (0.16 + 0.2 * pulse) * alpha), 18)
+	var icon := size * 1.35
+	var x := r.position.x + size * 0.9
+	eye_slash_icon(ci, Vector2(x + icon * 0.5, center.y), icon, Color(color.lerp(Color.WHITE, 0.25), alpha))
+	text(ci, font, Vector2(x + icon + size * 0.5, baseline_for(font, size, center.y)), s, size,
+		Color(color.lerp(Color.WHITE, 0.2 + 0.25 * pulse), alpha))
