@@ -42,6 +42,7 @@ Einstellungen und Highscores liegen in `%APPDATA%\planet_protector`.
 |---|---|---|
 | Bewegen | ← → oder A / D | D-Pad oder linker Stick |
 | Feuern (gedrückt halten erlaubt) | Leertaste | A / B (Kreuz / Kreis) |
+| Power-up auslösen (nur mit POWER-UPS ON) | Shift oder Strg | X / Y (Quadrat / Dreieck), LB / RB (L1 / R1) |
 | Bestätigen | Enter (im Titel und in der Schiffsauswahl auch Leertaste) | X / Y (Quadrat / Dreieck), Start; im Titel und in der Schiffsauswahl auch A |
 | Pause | P oder Escape | Start (Options) |
 | Lautstärke in der Pause | ↑ ↓ wählen, ← → ändern | D-Pad / Stick |
@@ -114,8 +115,9 @@ oder linker Stick bewegen, A/B feuern, Start pausiert). Einstellungen und Highsc
 
 ## Spielablauf
 
-- **Titel**: Schwierigkeit (Beginner, Normal, Hard, Expert), Musik und Soundeffekte an/aus, Lautstärke für Musik und
-  Effekte (0–100 %, auch in der Pause einstellbar), Anzeigemodus (DISPLAY, siehe oben), Highscores.
+- **Titel**: Schwierigkeit (Beginner, Normal, Hard, Expert), Spieleranzahl (PLAYERS 1 / 2), Power-ups (POWER-UPS
+  OFF / ON), Musik und Soundeffekte an/aus, Lautstärke für Musik und Effekte (0–100 %, auch in der Pause einstellbar),
+  Anzeigemodus (DISPLAY, siehe oben), Highscores.
   Nach 90 Sekunden ohne Eingabe startet eine kurze Demo (Attract-Modus); jede Taste führt zurück zum Titel.
 - **Schiffsauswahl**: sechs Schiffe mit unterschiedlichen Waffen (schnelle Laser, mitgeführte Raketen, Doppelschüsse,
   durchschlagende Schüsse). Animierte Vorschau zeigt jede Waffe in Aktion.
@@ -125,7 +127,38 @@ oder linker Stick bewegen, A/B feuern, Start pausiert). Einstellungen und Highsc
   - Mars (Level 14–16): Farbsperre violett → gelb → grün (wird vor Level 14 erklärt).
   - Erde (Level 19–20): Schwarze Gegner brauchen drei Treffer innerhalb von 10 Sekunden.
 - Zwischen den Planeten gibt es Ankunftssequenzen, nach Level 20 einen Siegesbildschirm und eine Highscore-Eintragung.
-- Vier getrennte Top-10-Listen, eine pro Schwierigkeitsgrad.
+- Vier getrennte Top-10-Listen, eine pro Schwierigkeitsgrad – und noch einmal vier für Spiele mit Power-ups. In der
+  Highscore-Ansicht wechselt ←/→ den Schwierigkeitsgrad, ↑/↓ zwischen CLASSIC und POWER-UPS.
+
+Mit PLAYERS 1 und POWER-UPS OFF ist alles genau das klassische Spiel.
+
+### Zwei Spieler (Hotseat)
+
+`PLAYERS` im Titel auf **2** stellen. Gespielt wird abwechselnd an einem Bildschirm, ein Controller oder eine Tastatur
+reicht:
+
+1. **Schiffe sperren:** Spieler 1 sperrt bis zu drei der sechs Schiffe für Spieler 2 – Spieler 2 schaut so lange weg
+   („PLAYER 2 – LOOK AWAY!“). Dann wird der Controller übergeben, und Spieler 2 sperrt verdeckt für Spieler 1.
+   Wer seinen Gegner für stark hält, sperrt ihm z. B. HUNTER, BLASTER und DOUBLE HUNTER.
+2. **Aufdecken:** Beide Sperren werden gezeigt, danach wählt jeder sein Schiff aus den freien.
+3. **Spielen:** Level für Level abwechselnd, Spieler 1 beginnt. Vor jedem Zug zeigt „PLAYER 2 – GET READY“, wer dran ist.
+   Die Ankunft beim nächsten Planeten kommt erst, wenn beide das Level gespielt haben.
+4. Wer alle Leben verloren hat, scheidet aus; der andere spielt allein weiter bis zum Ende.
+5. **Ergebnis:** Am Ende zeigt „MATCH RESULT“ den Sieger (höhere Punktzahl). Beide dürfen sich in die Highscoreliste
+   eintragen – die Regeln pro Spieler sind dieselben wie im Einzelspiel.
+
+### Power-ups
+
+`POWER-UPS` im Titel auf **ON** stellen. Auf drei Planeten gibt es pro Level einmal ein Power-up, das man selbst auslöst
+(Shift / Strg bzw. X / Y / LB / RB). Unten im Bild zeigt eine Anzeige, ob es bereit ist und wie lange es noch läuft:
+
+- **Saturn – RAPID FIRE (10 s):** Dauerfeuer, ohne auf den letzten Schuss warten zu müssen (gleiche Schussrate für alle Schiffe).
+- **Jupiter – TWIN (15 s):** ein unverwundbarer Zwilling deines Schiffs fährt hin und her und feuert, sobald sein Schuss
+  weg ist.
+- **Mars – SHIELD (10 s):** ein Schutzschild fängt alle feindlichen Feuerbälle ab.
+- Neptun, Uranus, das Bonuslevel und die Erde bekommen nichts – die Erde muss man aus eigener Kraft beschützen.
+
+Spiele mit Power-ups landen in eigenen Highscorelisten.
 
 ## Selbst bauen
 

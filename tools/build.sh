@@ -32,7 +32,7 @@ export_preset() {
 write_liesmich() {
 	python3 -c 'import sys; sys.stdout.buffer.write(b"\xef\xbb\xbf" + sys.stdin.buffer.read().replace(b"\n", b"\r\n"))' \
 		> "$1" <<'EOF'
-PLANET PROTECTOR 1.1 für Windows
+PLANET PROTECTOR 1.6 für Windows
 ================================
 
 Ein moderner 2D-Arcade-Shooter: Verteidige das Sonnensystem in 20 Leveln von
@@ -66,6 +66,7 @@ STEUERUNG
 Tastatur
   Bewegen ............ Pfeiltasten links/rechts oder A / D
   Feuern ............. Leertaste (gedrückt halten erlaubt)
+  Power-up ........... Shift oder Strg (nur mit POWER-UPS ON)
   Bestätigen ......... Enter (im Titel und in der Schiffsauswahl auch Leertaste)
   Pause .............. P oder Esc
   Pause -> Titel ..... Q
@@ -77,6 +78,7 @@ Tastatur
 Controller (Xbox / PlayStation)
   Bewegen ............ Steuerkreuz oder linker Stick
   Feuern ............. A / B (Kreuz / Kreis)
+  Power-up ........... X / Y oder LB / RB (nur mit POWER-UPS ON)
   Bestätigen ......... X / Y (Quadrat / Dreieck) oder Start,
                        im Titel und in der Schiffsauswahl auch A
   Pause .............. Start (Options)
@@ -86,9 +88,19 @@ Controller (Xbox / PlayStation)
   Name eingeben ...... hoch/runter ändert das Zeichen, links/rechts bewegt
                        den Cursor, B löscht
 
-Im Titelmenü lassen sich Schwierigkeit, Musik und Soundeffekte (an/aus und
-Lautstärke) einstellen; dort sind auch die Highscores zu finden. Die
-Lautstärken lassen sich zusätzlich im Pausenmenü ändern.
+Im Titelmenü lassen sich Schwierigkeit, Spieleranzahl (PLAYERS 1 / 2),
+Power-ups (POWER-UPS OFF / ON), Musik und Soundeffekte (an/aus und
+Lautstärke) und der Anzeigemodus einstellen; dort sind auch die Highscores
+zu finden. Die Lautstärken lassen sich zusätzlich im Pausenmenü ändern.
+
+Zwei Spieler (PLAYERS 2): Gespielt wird abwechselnd Level für Level an
+einem Bildschirm. Vorher sperrt jeder verdeckt bis zu drei Schiffe für den
+anderen. Wer alle Leben verloren hat, scheidet aus, der andere spielt
+weiter. Am Ende dürfen sich beide in die Highscoreliste eintragen.
+
+Power-ups (POWER-UPS ON): einmal pro Level selbst auslösen - Saturn:
+Dauerfeuer (10 s), Jupiter: unverwundbarer Zwilling (15 s), Mars:
+Schutzschild (10 s). Spiele mit Power-ups haben eigene Highscorelisten.
 
 
 EINSTELLUNGEN UND HIGHSCORES

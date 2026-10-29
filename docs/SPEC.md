@@ -244,6 +244,7 @@ LEVEL n completed:
 LEVEL game over → GAME OVER → NAME ENTRY (if qualifies) → HIGHSCORES → TITLE
 PAUSE: Q (or controller Back) → TITLE (no highscore entry)
 ```
+This is the flow of a ONE-player run (title PLAYERS = 1). Two-player hotseat matches (title PLAYERS = 2): §19.2.
 - Title: logo, START, DIFFICULTY (cycle), MUSIC On/Off, SOUND EFFECTS On/Off, HIGHSCORES, QUIT. Options persist on disk.
   [DESIGN – client request, feedback round 3] Two more rows directly under the switches: MUSIC VOLUME (under MUSIC) and
   EFFECTS VOLUME (under SOUND EFFECTS), each a 10-segment bar plus the percentage, 0–100 % in 10 % steps (§14). Left/right
@@ -256,6 +257,11 @@ PAUSE: Q (or controller Back) → TITLE (no highscore entry)
   same in content coordinates on both canvases, centred on 1280 × 720): logo 600 px wide (centre y 128), tagline, menu
   panel 640 px wide (rows 560 px, 38 px apart, first row y 270, panel 241…603), the DISPLAY line at y 630, the two hint rows
   at y 664 / 693 (`tests/test_volume.gd`, `tests/test_display.gd`).
+  [DESIGN – client request, forum round] Two more rows directly under DIFFICULTY: PLAYERS (`1` / `2`) and POWER-UPS
+  (`OFF` / `ON`), §19.1. Layout of the 11 rows (content coordinates, the same in every mode; replaces the 9-row numbers):
+  logo 540 px wide (centre y 122; its letters stay below the BEST value), tagline, menu panel 640 px wide (rows 560 px,
+  font 18, 33 px apart, first row y 253, panel 228…608), the explanation line at y 636 (DISPLAY, PLAYERS, POWER-UPS), the
+  hint rows at y 665 / 694 (`tests/test_volume.gd`, `test_display.gd`, `test_steamdeck.gd`, `test_hotseat_screens.gd`).
 - Interlevel: "LEVEL n COMPLETE – <name>", score, level bonus, extra life (if awarded), total time, and the remaining battles
   until the next planet, e.g. "2 more battles until Uranus". After levels 3, 6, 9, 12, 16 show "<Planet> secured!" instead.
   For levels 17–19 show "<20−n> more battle(s) to defend Earth". No wrong planet counters after bonus level 13 (the bonus result
@@ -273,6 +279,7 @@ PAUSE: Q (or controller Back) → TITLE (no highscore entry)
   `You are a real champion on the trigger. You moved smoothly through enemy lines, you destroyed them all! Everlasting love to You, oh great PLANET PROTECTOR!`
   Enter leads to the highscore entry.
 - Ship select: six ships with animated previews that use the SAME projectile graphics as the game (guided shots follow the preview ship).
+  In a two-player match it shows the player and the ships locked for him/her (§19.3).
 
 ### 11.1 Attract mode (demo) [DESIGN – client request, feedback round 2]
 
@@ -430,6 +437,10 @@ direction still held when the pause closes does not move the ship until it is re
 held through the pause (or pressed in it) fires at once after the resume (hold-to-fire, §4). P/Escape/Start/Q/Back
 act on a fresh press only, so a held one does nothing. No pause and no volume menu in a demo (§11.1).
 
+[DESIGN – client request, forum round] Power-up button (only with POWER-UPS ON, §19.5): Shift or Ctrl (either side) on the
+keyboard, X / Y (Square / Triangle) or LB / RB (L1 / R1) on the controller – a fresh press triggers the level's power-up.
+X / Y keep confirming in every menu; the release guard on each screen change keeps a confirm press from triggering it.
+
 Controller (Godot/SDL positional mapping; PlayStation: Cross = A, Circle = B, Square = X, Triangle = Y, Options = Start, Share/Create = Back):
 - D-pad or left stick left/right moves (analog with sensible deadzone, 0.25).
 - A/B fire. X/Y confirm. A also confirms on the title screen and in ship select.
@@ -448,6 +459,8 @@ Controller (Godot/SDL positional mapping; PlayStation: Cross = A, Circle = B, Sq
 ## 13. Highscores [RULE]
 
 - Four separate top-10 lists (one per difficulty). Sort: score descending, then real play time ascending.
+  [DESIGN – forum round] Plus four lists for runs with POWER-UPS ON (§19.1); a two-player match enters its players into the
+  lists of its difficulty and power-up setting.
 - Time stored with full float precision; displayed with tenths `MM:SS.t`.
 - Name: max 8 chars from `A–Z 0–9 _ -` (client decision, originally 5); empty → `PILOT`. Highscore files with
   names of up to 5 characters stay valid and load unchanged; longer names in a hand-edited file are cut to 8 on load.
@@ -559,7 +572,8 @@ Optional: `assets/sprites/ui/title_demon.png` key art.
 - Game music sequencer source samples in `music/game/` (formats chosen by the audio agent; beware: Godot imports WAV with
   compression by default – use raw PCM or set the import option; files must be included in the export).
 - `sfx/<name>.wav` for names: `shot_laser, shot_rocket, shot_blaster, enemy_fire, enemy_hit, enemy_explode, locked_hit,
-  player_explode, extra_life, level_complete, materialize, menu_move, menu_confirm, menu_back, bonus_tick, game_over`.
+  player_explode, extra_life, level_complete, materialize, menu_move, menu_confirm, menu_back, bonus_tick, game_over`,
+  and for the power-ups (§19.5) `powerup_on, powerup_off, shield_hit`.
 
 Everything must work with missing assets (fallbacks in `Assets`), so code and art can be developed in parallel.
 
@@ -577,7 +591,8 @@ game/
   scripts/data/ship_data.gd         ShipData     – ships + difficulties (class_name, static)                 (owner: lead)
   scripts/main.gd                   Main         – screen manager / run flow (§11)                           (owner: ui)
   scripts/screens/*.gd              title, ship_select, interlevel, arrival, mars_rules, bonus_result,
-                                    victory, game_over, name_entry, highscores                               (owner: ui)
+                                    victory, game_over, name_entry, highscores, display_select,
+                                    ship_lock, handover, lock_reveal, match_result (§19)                     (owner: ui)
   scripts/common/starfield.gd       Starfield (class_name) – layered star background                         (owner: ui)
   scripts/common/ui_kit.gd          UiKit (class_name, static) – text/panel helpers                          (owner: ui)
   scripts/common/projectile_art.gd  ProjectileArt (class_name, static) – drawing of all projectiles           (owner: gameplay)
@@ -612,6 +627,10 @@ No nodes, no autoload access except the static data classes. Event types (at lea
 `enemy_fire{x,y,count}`, `enemy_spawned{id,x,y,scale}`, `enemy_split{id,x,y,children:[ids]}`, `enemy_destroyed{id,x,y,scale,points}`,
 `enemy_hit_nonlethal{id,x,y,kind}` (kind: "color_stage" | "rolling"), `locked_hit{id,x,y}`, `player_hit{x,y,lives_left}`,
 `player_respawn`, `extra_life{reason}`, `level_goal_met`, `level_complete{completion_bonus,extra_life,flawless}`, `game_over`.
+Power-ups (§19.5): `var powerup` (LevelData.PowerUp, set by GameScreen before the combat), `powerup_state` (READY / ACTIVE /
+USED), `powerup_left` (real s), `twin_x`, `can_activate_powerup()`, `activate_powerup() -> bool`; events
+`powerup_activated{kind,x}`, `powerup_expired{kind,x}`, `shield_absorbed{x,y}`, and the twin's salvos as
+`shot_fired{ship_id,count,x,twin: true}`.
 GameWorld keeps its own score delta/lives/active_time; GameScreen syncs them into `Run`.
 
 ### 17.3 Dev / test command line (user args after `--`)
@@ -619,6 +638,13 @@ GameWorld keeps its own score delta/lives/active_time; GameScreen syncs them int
 `--invincible`, `--autoplay` (simple bot moves under the lowest enemy and fires), `--screen=<name>` (open a single screen for
 screenshots), `--screenshot=<path>` + `--screenshot-delay=<seconds>` (save a viewport PNG and quit), `--quit-after=<s>`.
 `Main` parses these (owner: ui); GameScreen honours invincible/autoplay through `Run.dev_flags`.
+[forum round] `--powerups` (POWER-UPS on for a direct start), `--players=2 --level=N [--ship2=K2]` (a two-player match
+straight at PLAYER 1's TURN screen of level N, no locks; PLAYER 2 flies K2, default K), `--screen=<name> --players=2
+[--player=k] [--other-out]` (two-player variants of interlevel, bonus_result, game_over, victory, name_entry, mars_rules,
+ship_select, highscores with a fake match), `--screen=ship_lock|handover [--kind=locks|turn]|lock_reveal|match_result|turn`.
+`res://dev/capture.tscn` additionally takes `--powerups`, `--powerup-at=<s>`, `--players=2 [--player=K] [--ship2=S]` and
+`--when=powerup|powerup_warn|powerup_used|absorb`; `res://dev/playthrough.tscn` plays whole matches
+(`--players=2 --level=1 [--powerups]`, its log names the player of every screen).
 
 ## 18. Widescreen (16:9 / 16:10 display modes) [DESIGN – client request, widescreen round + Steam Deck round]
 
@@ -667,3 +693,146 @@ first-start screen and in the title menu). GameScreen creates its world with `Ga
   widths, bots and demos at 1280, and digests of W = 960 runs recorded with the code before the widescreen change),
   `tests/test_steamdeck.gd` (limits, bots and demos at 1152; digests of W = 960 and W = 1280 runs recorded before the Steam
   Deck change, so modes 0 / 1 / 2 are proven bit-for-bit unchanged).
+
+## 19. Two players (hotseat) and power-ups [DESIGN – client request, forum round]
+
+Two optional modes the client decided on after feedback from the LinuxGuides forum. With PLAYERS = 1 and POWER-UPS OFF the
+game is exactly the game of §1–§18 (the simulation is bit-for-bit the classic one, `tests/test_powerups.gd` reproduces the
+recorded digests of `tests/test_wide_playfield.gd` with the power-up code in place).
+
+### 19.1 Options and highscore lists
+- Title rows PLAYERS (`1` / `2`) and POWER-UPS (`OFF` / `ON`) directly under DIFFICULTY, binary like MUSIC / SOUND EFFECTS:
+  left, right and confirm flip them once per press, auto-repeat steps of a held direction are ignored. Stored at once as
+  `[game] players / powerups` in settings.cfg (missing keys: 1 player, power-ups off).
+- The line under the menu explains the selected row: PLAYERS 1 "Solo run · choose 2 for a hotseat match on one
+  controller", 2 "Hotseat match: take turns level by level and lock ships for each other"; POWER-UPS OFF "Classic rules ·
+  ON: one power-up per level on Saturn, Jupiter and Mars", ON "Once per level: Saturn RAPID FIRE · Jupiter TWIN · Mars
+  SHIELD · own highscore lists".
+- Highscores: four classic lists (JSON keys "0" … "3", unchanged) and four lists for runs with POWER-UPS ON ("p0" …
+  "p3"); older files simply have no power-up lists. A two-player match enters its players into the lists of its difficulty
+  and power-up setting – per player the rules are exactly those of a one-player run (like the two-player mode of the old
+  arcade machines). The title's BEST line shows the best entry of the selected difficulty AND category ("BEST · NORMAL" /
+  "BEST · NORMAL · POWER-UPS"). The highscore screen has a second, smaller tab row CLASSIC / POWER-UPS under the difficulty
+  tabs, switched with up/down (once per press); left/right switches the difficulty as before. Title → HIGHSCORES opens the
+  category of the title's POWER-UPS setting. Layout at 960 × 720: title 58, difficulty tabs 94, category row 139, panel
+  166–640, hint row 680.
+
+### 19.2 Two players: run flow
+Two players take turns LEVEL BY LEVEL on one screen with one controller or keyboard. Shared: difficulty, POWER-UPS setting,
+level sequence. Per player: ship, score, lives, level, play time, results. `Run`'s per-player fields always hold the player
+whose turn it is (`Run.switch_to(k)` parks the current player's state and loads player k's, `Run.player_get(k, key)` reads
+either). The rules of each level are exactly those of a one-player run.
+
+**Setup** (title START with PLAYERS = 2) – the ship locks are hidden and sequential on one screen:
+```
+TITLE ─start─▶ SHIP LOCK (P1 locks for P2) ─done─▶ HAND-OVER ("locks", P2) ─continue─▶ SHIP LOCK (P2 locks for P1)
+  ─done─▶ LOCK REVEAL ─continue─▶ SHIP SELECT (P1, locked = locks on P1) ─confirm─▶ SHIP SELECT (P2, locked = locks on P2)
+  ─confirm─▶ Run.start_match(difficulty, ships, locks, 1, POWER-UPS) ─▶ TURN (P1, level 1) ─▶ LEVEL 1 …
+Escape / B on a SHIP LOCK or SHIP SELECT screen ─▶ TITLE (setup aborted)
+```
+Each player may lock up to 3 of the 6 ships for the OTHER player, so at least 3 stay free. Both ship selects start on the
+ship the player flew last (the first free one if that is locked).
+
+**Match** – round n: every player still in the match plays level n, PLAYER 1 first.
+```
+TURN(k, n) [only on a player change] ─▶ LEVEL n (k) ─completed─▶ n ≠ 13: INTERLEVEL (k)   n = 13: BONUS RESULT (k)
+                                                    ─game over─▶ GAME OVER (k)
+then: the next player of the round who is not out ─▶ TURN(j, n) ─▶ LEVEL n (j) …, or – the round is over –
+      nobody left (both out)         ─▶ MATCH RESULT ─▶ name entries ─▶ HIGHSCORES ─▶ TITLE
+      n = 20 (someone completed it)  ─▶ VICTORY ─▶ MATCH RESULT ─▶ name entries ─▶ HIGHSCORES ─▶ TITLE
+      n = 13                         ─▶ MARS RULES ─▶ round 14
+      n ∈ {3, 6, 9, 12, 16}          ─▶ ARRIVAL(n) ─▶ round n+1
+      else                           ─▶ round n+1
+PAUSE: Q / Back ─▶ TITLE (match aborted, no highscore entries)
+```
+- A player who loses the last life is out (`Run.out`) and skipped from then on; the other plays on alone to the end.
+  Completing level 20 sets `Run.won`.
+- The arrival at a planet (arrival sequence) and the Mars rules come once per round, after the round's last turn – i.e.
+  only when both players have played the level.
+- TURN screen before a level whenever its player differs from the player of the previous level (and at the start of the
+  match): before every level while both play; once one is out only after the switch, then the remaining player's levels
+  follow each other like in a one-player run.
+- Name entries at the end of the match: the players by score (descending; equal scores: shorter play time first, then
+  PLAYER 1). Each one is checked with `Settings.qualifies(difficulty, score, time, powerups)` (score > 0) at the moment it
+  is his/her turn, i.e. after the better player's entry was inserted. HIGHSCORES then shows the match's list with every
+  entry of the match highlighted (rows recomputed after the last insert).
+- Pure decision helpers in `RunFlow` (`setup_next`, `next_in_round`, `anyone_left`, `needs_turn_screen`, `turn_or_level`,
+  `after_round`, `match_next`, `entry_order`, `entry_ranks`); `RunFlow.next()` of the one-player flow is unchanged.
+  Tests: `tests/test_hotseat_flow.gd` (whole-match simulations and the real Main driven through matches).
+
+### 19.3 Screens of a match
+Player colours: `UiKit.COLOR_P1` cyan, `UiKit.COLOR_P2` pink. Every screen keeps the 960 × 720 content layout, centred on
+the wider canvases; small captions are lifted in modes 3 / 4 (`UiKit.label_size`). Title music on the setup screens (SHIP
+LOCK, setup HAND-OVER, LOCK REVEAL, like the ship select); these confirm with Enter / Space / A / X / Y / Start. The
+in-match screens (turn HAND-OVER, MATCH RESULT) confirm with Enter / X / Y / Start only (A / B are fire buttons, like the
+interlevel).
+- SHIP LOCK (`ship_lock_screen.gd`, setup `{"player": k (who locks), "locked": ids}`): "PLAYER k LOCKS", "Lock up to 3
+  ships PLAYER j may not fly" and a pulsing "PLAYER j – LOOK AWAY!" pill (eye-slash pictogram) in PLAYER j's colour. Six
+  rows (ship icon, name in its accent colour, SPEED / SHOTS / GUIDED / PIERCING / BONUS) and a DONE row with three padlock
+  pips and "n / 3 LOCKED". Up/down select (wrapping); confirm on a ship toggles its lock (lock: `locked_hit` clink and a
+  padlock stamp; unlock: menu_move); a 4th lock is refused (menu_back, the count flashes red, "Only 3 ships can be locked –
+  unlock one first"). Confirm on DONE → `finished("done", {"locked": ids ascending})`; Escape / B → `finished("back")`.
+- HAND-OVER (`handover_screen.gd`), confirm after 0.6 s → `finished("continue")`, Escape / B do nothing:
+  kind "locks" `{"player": k}`: "PLAYER j READY" with a check badge, "Ship locks set – they stay secret until both
+  players are done", "Pass the controller to PLAYER k", "PLAYER j – LOOK AWAY!" – it shows (and reads) no lock data.
+  Kind "turn" `{"player": k, "level": n}` (Main opens it as screen "turn"): the level's planet, "LEVEL n – <NAME>" (bonus
+  level: "LEVEL 13 – BONUS ROUND"), a big "PLAYER k", "GET READY", SCORE | LIVES | SHIP of the player, the other player
+  small (score, GAME OVER / EARTH SAVED) and – with POWER-UPS on a power-up level – "POWER-UP THIS LEVEL: RAPID FIRE" with
+  the key hint. Silent: it sits between two levels like the interlevel.
+- LOCK REVEAL (`lock_reveal_screen.gd`, setup `{"locked": [ids P1 may not fly, ids P2 may not fly]}`): "SHIP LOCKS
+  REVEALED", per player a panel "PLAYER k / MAY NOT FLY" with the locked ships (or "NO LOCKS – every ship is free") and a
+  strip of all six ships with "n OF 6 SHIPS FREE". Both players' i-th locks stamp in together at 0.25 + 0.15·i s; all
+  have landed before confirm is possible (0.8 s).
+- SHIP SELECT (setup adds `{"player": k, "locked": ids}`): header "PLAYER k – CHOOSE YOUR SHIP"; locked tiles dark with a
+  red border, a still silhouette under a padlock and "LOCKED BY PLAYER j"; the cursor may rest on them, confirm is refused
+  (menu_back, "Locked by PLAYER j – choose a free ship" shakes). The initial selection skips locked ships.
+- MATCH RESULT (`match_result_screen.gd`, reads both players through `Run.player_get`): "MATCH RESULT", difficulty and
+  CLASSIC / POWER-UPS, a panel per player (EARTH SAVED / GAME OVER, score counting up, level, play time, ship); at 0.9 s
+  "PLAYER k WINS!" (higher score) or "DRAW!" (equal scores) with the level-complete fanfare, the winner panel glows.
+  Confirm after 1.0 s.
+- Variants of the one-player screens (setup args from Main; without them they are the one-player screens):
+  INTERLEVEL "PLAYER k" above the title and, while the other player still has to play this level, "Next: PLAYER j –
+  LEVEL n" instead of the progress line (its confirm sound follows the real next screen); BONUS RESULT "PLAYER k" and the
+  "Next: …" line; GAME OVER "PLAYER k", no NEW HIGHSCORE (entries come at the end), instead "PLAYER j PLAYS ON" /
+  "PLAYER j SAVED EARTH!" / "MATCH OVER"; MARS RULES with the ships still in the match (mixed piercing / normal ships get
+  both locked-hit lines); VICTORY both players' scores (EARTH SAVED / GAME OVER · LEVEL n under each); NAME ENTRY "PLAYER k"
+  and the category in the rank line ("RANK 2 · NORMAL · POWER-UPS").
+- Tests: `tests/test_hotseat_screens.gd`, `tests/test_hotseat_flow.gd`.
+
+### 19.4 HUD in a match
+- Top bar: the SCORE caption reads "P1 SCORE" / "P2 SCORE" in the current player's colour; nothing else is added.
+- Intro banner: "PLAYER 1  ·  SATURN  ·  NORMAL" ("PLAYER 1" in the player colour; bonus level "PLAYER 1  ·  LEVEL 13  ·
+  BONUS ROUND").
+
+### 19.5 Power-ups
+Only with POWER-UPS ON (`Run.powerups`); every demo world has none.
+- One power-up per level, triggered once by the player with the power-up button (§12): Saturn (levels 7–9) RAPID FIRE
+  10 s, Jupiter (10–12) TWIN 15 s, Mars (14–16) SHIELD 10 s; none on Neptune, Uranus, bonus level 13 and Earth – Earth must
+  be protected by skill (`LevelData.powerup_of`, `POWERUP_TIME`).
+- Life cycle READY → ACTIVE → USED, never back. It can be triggered while the state is PLAYING (not during the intro
+  banner, a respawn or the level end), the ship is alive and the level goal is not met; refused presses are silent.
+- Duration in REAL seconds of combat: the timer runs only in PLAYING sub-steps (counted in sub-steps, so it lasts exactly
+  10 / 15 / 10 s at speed 1.0 / 1.2 / 1.44) and is frozen in the intro, during a respawn, at the level end and in the
+  pause. A power-up active when the ship is hit continues after the respawn. Power-ups use no random numbers.
+- RAPID FIRE: the one-salvo-at-a-time rule (§4) is suspended. With fire held a salvo leaves whenever the cooldown has run
+  out; the cooldown then grows by 0.18 game s per shot of the salvo (single ships 0.18 s, double ships 0.36 s – the same
+  shots per second for every ship; the rest of a sub-step carries over). The first salvo leaves at once. Every guard of §4
+  / §10 still applies. Afterwards the normal rule applies again.
+- TWIN: an invincible second ship of the player's ship type. It appears at the ship and heads for the farther screen edge,
+  then patrols between the ship limits at the ship's speed (in PLAYING and CLEARING). It fires its own salvo whenever none
+  of ITS shots is in flight (not after the level goal is met). Its shots are normal shots of the ship type (speed, guided,
+  piercing, points); guided ones follow the twin, after it is gone they fly on. Enemy bullets pass through it. The ship's
+  own one-salvo rule counts only the ship's own shots. A player hit clears all shots, the twin's included.
+- SHIELD: every enemy bullet whose centre comes within |dx| < 34 and |dy| < 30 of the ship centre is absorbed – a superset
+  of the hit box, so the ship cannot be hit while the shield is up.
+- HUD: a pill centred in the ground strip – READY (name, pulsing READY, key hint SHIFT / X; dimmed once the goal is met),
+  ACTIVE (name, draining bar, seconds left; blinking and red in the last 2 s), USED (dim "<NAME>  USED" for 2 s, then it
+  fades). Nothing on levels without a power-up. The intro banner of a power-up level adds "POWER-UP:  <NAME>". Colours:
+  RAPID FIRE orange, TWIN violet, SHIELD cyan.
+- Look: RAPID FIRE – red-hot throbbing hull, glowing muzzles, longer exhaust; TWIN – the same ship, translucent violet
+  with a holographic sheen, materializing / vanishing with a scan beam and rings, its shots tinted violet; SHIELD – an
+  energy bubble around the ship (rim, running arcs, ground light), a hexagonal flash where a fireball is absorbed. Every
+  effect blinks in its last 2 s; triggering shows a burst in the power-up colour.
+- Sounds: `powerup_on`, `powerup_off`, `shield_hit` (synthesised by `tools/audio/make_sfx.py`, docs/AUDIO.md).
+- Tests: `tests/test_powerups.gd` (rules, timing, frozen states, rapid-fire spacing, twin, shield, events, determinism),
+  `tests/test_powerups_screen.gd` (GameScreen wiring, input mapping, pause, release guard, autoplay, sounds, HUD).
