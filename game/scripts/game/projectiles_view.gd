@@ -3,6 +3,8 @@ extends Node2D
 ## Mode SHOTS: own salvos. Mode BULLETS: enemy fireballs + ground splashes – this node lives inside a
 ## clipping Control (0,0)-(W,685) (W = playfield width, 960, 1280 or 1152), so nothing of a fireball is ever drawn below
 ## the ground.
+## TWIN power-up (SPEC §19.3): the twin's shots look like the ship's own but are drawn on a child layer tinted in the
+## twin colour, so the player can tell them apart.
 
 const FxTex := preload("res://scripts/game/fx_tex.gd")
 
@@ -10,7 +12,24 @@ enum Mode { SHOTS, BULLETS }
 
 var mode: Mode = Mode.SHOTS
 var world: GameWorld
+var twin_color := Color(0.74, 0.58, 1.0)
 var _splashes: Array[Dictionary] = []
+var _twin_layer: Node2D          ## SHOTS on a TWIN level only
+
+
+func _ready() -> void:
+	if mode == Mode.SHOTS and world != null and world.powerup == LevelData.PowerUp.TWIN:
+		_twin_layer = Node2D.new()
+		var c := Color(1, 1, 1).lerp(twin_color, 0.55)
+		_twin_layer.modulate = Color(c.r, c.g, c.b, 0.9)
+		_twin_layer.draw.connect(_draw_twin_shots)
+		add_child(_twin_layer)
+	set_process(_twin_layer != null)
+
+
+func _process(_delta: float) -> void:
+	if _twin_layer != null:
+		_twin_layer.queue_redraw()
 
 
 ## Bullet reached the ground surface: small splash of light on the horizon (clipped like the bullets).
@@ -34,7 +53,8 @@ func _draw() -> void:
 		return
 	if mode == Mode.SHOTS:
 		for s in world.shots:
-			ProjectileArt.draw_player_shot(self, world.ship_id, Vector2(s.x, s.y), s.age)
+			if not s.twin:
+				ProjectileArt.draw_player_shot(self, world.ship_id, Vector2(s.x, s.y), s.age)
 		return
 	var gy := LevelData.GROUND_Y
 	for sp in _splashes:
@@ -49,6 +69,12 @@ func _draw() -> void:
 			FxTex.draw_centered(self, FxTex.core(), q, Vector2(3, 3), Color(1.0, 0.7, 0.3, a))
 	for b in world.bullets:
 		ProjectileArt.draw_enemy_bullet(self, Vector2(b.x, b.y), Vector2(b.vx, b.vy), b.age, 1.0, fireball_alpha(b))
+
+
+func _draw_twin_shots() -> void:
+	for s in world.shots:
+		if s.twin:
+			ProjectileArt.draw_player_shot(_twin_layer, world.ship_id, Vector2(s.x, s.y), s.age)
 
 
 ## Drawn alpha of an enemy fireball of `world`: it fades while it sinks into the ground (it is removed once

@@ -10,7 +10,12 @@ extends Node
 ## 16:10 Steam Deck mode (1152 px playfield, screenshot 1280×800); 1 / 2 / 4 have the
 ## 1280 px wide playfield (screenshot = 1920×1080 / 2560×1440 / 1280×720). Without it the stored mode counts.
 ## --at: capture times in seconds since start. --when: capture once when a condition first holds
-## (split | explosion | bullets | respawn | clearing | stage | flash | materialize) plus --delay seconds.
+## (split | explosion | bullets | respawn | clearing | stage | flash | materialize | powerup | powerup_warn |
+## powerup_used | absorb) plus --delay seconds.
+## Power-ups (SPEC §19.3): --powerups turns them on for the run; --powerup-at=T triggers the power-up at T seconds
+## (retried until it can; the autoplay bot then leaves the button alone – without --powerup-at it triggers it at
+## once). Two players (SPEC §19.2): --players=2 [--player=K] [--ship2=S] starts a match and makes player K (0 / 1)
+## current (HUD captions in the player colour); --score applies to that player.
 
 const GameScreenScript := preload("res://scripts/game/game_screen.gd")
 
@@ -24,6 +29,7 @@ var _shot_n := 0
 var _quit_after := 30.0
 var _pause_at := -1.0
 var _hit_at := -1.0
+var _powerup_at := -1.0
 var _busy := false
 
 
@@ -44,11 +50,20 @@ func _ready() -> void:
 	_quit_after = float(_args.get("quit-after", 30.0))
 	_pause_at = float(_args.get("pause-at", -1.0))
 	_hit_at = float(_args.get("hit-at", -1.0))
+	_powerup_at = float(_args.get("powerup-at", -1.0))
 	_apply_display()
-	Run.start_new(int(_args.get("difficulty", 1)), int(_args.get("ship", 0)), int(_args.get("level", 1)))
+	var diff := int(_args.get("difficulty", 1))
+	var ship := int(_args.get("ship", 0))
+	var lvl := int(_args.get("level", 1))
+	if int(_args.get("players", 1)) == 2:
+		Run.start_match(diff, [ship, int(_args.get("ship2", ship))], [[], []], lvl, _args.has("powerups"))
+		Run.switch_to(clampi(int(_args.get("player", 0)), 0, 1))
+	else:
+		Run.start_new(diff, ship, lvl, _args.has("powerups"))
 	if _args.has("score"):
 		Run.score = int(_args["score"])
-	Run.dev_flags = {"invincible": _args.has("invincible"), "autoplay": _args.has("autoplay")}
+	Run.dev_flags = {"invincible": _args.has("invincible"), "autoplay": _args.has("autoplay"),
+		"manual_powerup": _powerup_at >= 0.0}
 	_start(Run.level)
 
 
@@ -93,6 +108,10 @@ func _process(delta: float) -> void:
 		_hit_at = -1.0
 		var w: GameWorld = _screen.world
 		w.add_bullet(w.player_x, LevelData.PLAYER_Y, 0.0, 0.0)   # forced player hit (dev)
+	if _powerup_at >= 0.0 and _t >= _powerup_at and _screen and is_instance_valid(_screen):
+		if (_screen.world as GameWorld).activate_powerup():
+			_powerup_at = -1.0
+			print("power-up triggered at %.2f" % _t)
 	if _when != "" and _when_at < 0.0 and _screen and is_instance_valid(_screen) and _check(_screen.world):
 		_when_at = _t + float(_args.get("delay", 0.0))
 		print("condition '%s' at %.2f" % [_when, _t])
@@ -132,6 +151,14 @@ func _check(w: GameWorld) -> bool:
 			for e in w.enemies:
 				if e.materialize() < 0.6 and e.materialize() > 0.2:
 					return true
+		"powerup":
+			return w.powerup_state == GameWorld.PowerState.ACTIVE
+		"powerup_warn":
+			return w.powerup_state == GameWorld.PowerState.ACTIVE and w.powerup_left < 2.0
+		"powerup_used":
+			return w.powerup_state == GameWorld.PowerState.USED
+		"absorb":
+			return float(_screen._player.shield_flash) > 0.8
 	return false
 
 

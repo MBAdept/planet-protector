@@ -7,6 +7,12 @@ extends Node2D
 ## Playfield width (SPEC §18.1): `width` (960, 1280 or 1152 – from the display mode). The top bar spans it (SCORE / LIVES on the left, LEVEL
 ## centred, DIFFICULTY / TIME at the same distance from the right edge as at 960); banners, the bonus counters, the
 ## pause overlay and the demo overlay are centred at width / 2.
+## Power-ups (SPEC §19.3): a pill centred in the ground strip – READY (name, READY, key hint, gently pulsing) →
+## ACTIVE (name, draining bar, seconds left; blinking in the last 2 s) → USED (dim "<NAME> USED", fades out after
+## ≈ 2 s, then nothing). Nothing at all on levels without a power-up (the bonus level, the demo). The intro banner of
+## a power-up level has an extra line "POWER-UP: <NAME>".
+## Two players (SPEC §19.2): the SCORE caption reads "P1 SCORE" / "P2 SCORE" in the player colour and the intro
+## caption starts with "PLAYER k" in the player colour. One-player runs look exactly as before.
 
 const FxTex := preload("res://scripts/game/fx_tex.gd")
 
@@ -30,6 +36,25 @@ const PAUSE_ROWS := [
 		"Music is switched off (title menu)"],
 	["sfx_volume", "EFFECTS VOLUME", "Every change plays a short preview", "Sound effects are switched off (title menu)"],
 ]
+# Power-ups (SPEC §19.3).
+## Colour of each power-up (pill, banner line, ship effects): rapid fire hot orange, twin violet, shield cyan.
+const POWERUP_COLORS := {
+	LevelData.PowerUp.RAPID_FIRE: Color(1.0, 0.58, 0.2),
+	LevelData.PowerUp.TWIN: Color(0.74, 0.58, 1.0),
+	LevelData.PowerUp.SHIELD: Color(0.4, 0.86, 1.0),
+}
+const POWERUP_WARN_TIME := 2.0     ## real seconds: the effect blinks in its last seconds
+const POWERUP_USED_SHOW := 2.0     ## real seconds the USED pill stays …
+const POWERUP_USED_FADE := 0.6     ## … then it fades out over this
+const PILL_H := 26.0
+const PILL_PAD := 14.0
+const PILL_BAR_W := 132.0
+const PILL_BAR_H := 6.0
+const PILL_HINT_SIZE := 12
+## Key hint of the power-up button: Shift (keyboard) / X (controller; also Ctrl, Y, LB, RB).
+const POWERUP_HINT: Array[String] = ["SHIFT", "pad:X"]
+## Baseline of the intro banner's "POWER-UP: <NAME>" line below the banner centre.
+const POWERUP_LINE_DY := 84.0
 
 var world: GameWorld
 var level := 1
@@ -40,6 +65,7 @@ var anim := 0.0             ## real seconds (banner animation)
 var clear_time := -1.0      ## real seconds since the level goal was reached (−1 = not yet)
 var respawn_time := -1.0
 var attract := false
+var powerup_end := -1.0     ## real seconds since the power-up ended (−1 = not yet), drives the USED fade
 
 var _f_label: Font
 var _f_value: Font
@@ -80,6 +106,7 @@ func _draw() -> void:
 	_draw_top_bar()
 	if world.is_bonus():
 		_draw_bonus_counters()
+	_draw_powerup()
 	_draw_banners()
 	if paused:
 		_draw_pause()
@@ -109,8 +136,9 @@ func _draw_top_bar() -> void:
 	draw_texture_rect(FxTex.band(), Rect2(0, BAR_H - 1.0, width, 2.0), false, Color(atm.r, atm.g, atm.b, 0.35))
 	var ly := 14.0
 	var vy := 35.0
-	# SCORE
-	_label(Vector2(18, ly), "SCORE")
+	# SCORE ("P1 SCORE" / "P2 SCORE" in the player colour in a two-player match)
+	var sc := score_caption()
+	_label(Vector2(18, ly), String(sc[0]), HORIZONTAL_ALIGNMENT_LEFT, sc[1])
 	_value(Vector2(18, vy), "%07d" % maxi(_score(), 0), 19, C_VALUE)
 	# LIVES
 	_label(Vector2(160, ly), "LIVES")
@@ -128,6 +156,14 @@ func _draw_top_bar() -> void:
 	# TIME
 	_label(Vector2(942 + _right(), ly), "TIME", HORIZONTAL_ALIGNMENT_RIGHT)
 	_value(Vector2(942 + _right(), vy), Fmt.time(_play_time()), 19, C_VALUE, HORIZONTAL_ALIGNMENT_RIGHT)
+
+
+## Caption of the score and its colour: "SCORE"; in a two-player match "P1 SCORE" / "P2 SCORE" in the colour of the
+## player whose turn it is (SPEC §19.2). A demo is never a match.
+func score_caption() -> Array:
+	if attract or not Run.is_two_player():
+		return ["SCORE", C_LABEL]
+	return ["P%d SCORE" % (Run.current + 1), UiKit.player_color(Run.current)]
 
 
 ## Shown values: the run's (Run) – or, in a demo, the demo world's own.
@@ -210,6 +246,145 @@ func counter_value_x(caption: String, label_x: float, value_x: float) -> float:
 	return maxf(value_x, label_x + lw + 8.0)
 
 
+# --- Power-up pill (ground strip, SPEC §19.3) ----------------------------------------------------
+## "RAPID FIRE" / "TWIN" / "SHIELD" ("" for NONE).
+static func powerup_name(kind: int) -> String:
+	return String(LevelData.POWERUP_NAMES.get(kind, ""))
+
+
+static func powerup_color(kind: int) -> Color:
+	return POWERUP_COLORS.get(kind, POWERUP_COLORS[LevelData.PowerUp.SHIELD])
+
+
+## 0…1 visibility of an expiring power-up's effects with `left` real seconds left: 1 until the last
+## POWERUP_WARN_TIME seconds, then short dips that come faster towards the end (4 → 9 per second). Driven by the
+## world's timer, so it freezes with it (respawn, level end, pause).
+static func powerup_blink(left: float) -> float:
+	if left <= 0.0 or left >= POWERUP_WARN_TIME:
+		return 1.0
+	var t := POWERUP_WARN_TIME - left
+	var phase := 4.0 * t + 1.25 * t * t
+	return 0.25 + 0.75 * smoothstep(0.08, 0.22, absf(fposmod(phase, 1.0) - 0.5))
+
+
+## What the ground-strip pill shows now: {"mode": "" (nothing) | "ready" | "active" | "used", "alpha": 0…1,
+## "fill": bar fill 0…1, "seconds": the seconds left as shown (rounded up to tenths, "6.3"), "blink": 0…1}.
+## READY dims once the level goal is met (it can no longer be used); USED stays POWERUP_USED_SHOW seconds, then
+## fades out.
+func powerup_pill() -> Dictionary:
+	var out := {"mode": "", "alpha": 0.0, "fill": 0.0, "seconds": "", "blink": 1.0}
+	if world == null or world.powerup == LevelData.PowerUp.NONE:
+		return out
+	match world.powerup_state:
+		GameWorld.PowerState.READY:
+			out["mode"] = "ready"
+			out["alpha"] = 0.45 if world.goal_met else 1.0
+		GameWorld.PowerState.ACTIVE:
+			out["mode"] = "active"
+			out["alpha"] = 1.0
+			out["fill"] = clampf(world.powerup_left / maxf(world.powerup_time(), 1e-6), 0.0, 1.0)
+			out["seconds"] = "%.1f" % (ceilf(world.powerup_left * 10.0 - 1e-6) / 10.0)
+			out["blink"] = powerup_blink(world.powerup_left)
+		_:
+			var fade := clampf(1.0 - (maxf(powerup_end, 0.0) - POWERUP_USED_SHOW) / POWERUP_USED_FADE, 0.0, 1.0)
+			if fade > 0.0:
+				out["mode"] = "used"
+				out["alpha"] = fade
+	return out
+
+
+## Width of the pill's content (without padding) for a mode at caption size `ls`.
+func powerup_pill_width(mode: String, ls: int) -> float:
+	var name_w := _f_label.get_string_size(powerup_name(world.powerup), HORIZONTAL_ALIGNMENT_LEFT, -1, ls).x
+	match mode:
+		"ready":
+			return name_w + 10.0 + _f_label.get_string_size("READY", HORIZONTAL_ALIGNMENT_LEFT, -1, ls).x + 16.0 \
+				+ _hint_width()
+		"active":
+			return name_w + 12.0 + PILL_BAR_W + 12.0 + _seconds_width()
+		"used":
+			return name_w + _f_label.get_string_size("  USED", HORIZONTAL_ALIGNMENT_LEFT, -1, ls).x
+	return 0.0
+
+
+## The pill's rectangle (centred in the ground strip).
+func powerup_pill_rect(mode: String) -> Rect2:
+	var w := powerup_pill_width(mode, UiKit.label_size(12)) + PILL_PAD * 2.0
+	var cy := LevelData.GROUND_Y + (LevelData.SCREEN_H - LevelData.GROUND_Y) * 0.5
+	return Rect2(_cx() - w * 0.5, cy - PILL_H * 0.5, w, PILL_H)
+
+
+## Width of the key hint "[SHIFT] / [X]" (its key caps are 1.55 × PILL_HINT_SIZE tall, inside the pill).
+func _hint_width() -> float:
+	return UiKit.glyph_width(POWERUP_HINT[0], PILL_HINT_SIZE) + PILL_HINT_SIZE * 0.9 \
+		+ UiKit.glyph_width(POWERUP_HINT[1], PILL_HINT_SIZE)
+
+
+func _seconds_width() -> float:
+	return _f_value.get_string_size("00.0", HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x
+
+
+func _draw_powerup() -> void:
+	var p := powerup_pill()
+	var mode := String(p["mode"])
+	if mode == "":
+		return
+	var a := float(p["alpha"])
+	var col := powerup_color(world.powerup)
+	var pname := powerup_name(world.powerup)
+	var ls := UiKit.label_size(12)
+	var r := powerup_pill_rect(mode)
+	var cy := r.get_center().y
+	var base := UiKit.baseline_for(_f_label, ls, cy)
+	var x := r.position.x + PILL_PAD
+	var name_w := _f_label.get_string_size(pname, HORIZONTAL_ALIGNMENT_LEFT, -1, ls).x
+	match mode:
+		"ready":
+			# Gently pulsing: the border light and READY breathe.
+			var pulse := 0.5 + 0.5 * cos(anim * TAU * 0.9) if not world.goal_met else 0.0
+			_pill(r, col, a, snappedf(0.4 + 0.4 * pulse, 1.0 / 32.0))
+			UiKit.text(self, _f_label, Vector2(x, base), pname, ls, Color(col, a))
+			x += name_w + 10.0
+			UiKit.text(self, _f_label, Vector2(x, base), "READY", ls, Color(C_VALUE, a * (0.72 + 0.28 * pulse)))
+			x += _f_label.get_string_size("READY", HORIZONTAL_ALIGNMENT_LEFT, -1, ls).x + 16.0
+			var gs := PILL_HINT_SIZE
+			var hc := Color(C_VALUE, 0.8 * a)
+			x += UiKit.glyph(self, POWERUP_HINT[0], x, cy, gs, hc)
+			UiKit.text(self, Assets.font_body, Vector2(x + gs * 0.45, UiKit.baseline_for(Assets.font_body, gs, cy)), "/", gs,
+				Color(hc, hc.a * 0.6), HORIZONTAL_ALIGNMENT_CENTER)
+			x += gs * 0.9
+			UiKit.glyph(self, POWERUP_HINT[1], x, cy, gs, hc)
+		"active":
+			var blink := float(p["blink"])
+			_pill(r, col, a, 0.6 * blink)
+			UiKit.text(self, _f_label, Vector2(x, base), pname, ls, Color(col, a))
+			x += name_w + 12.0
+			# Draining bar: dim track, the remaining part in the power-up colour with a light edge and a glow at its end.
+			var bar := Rect2(x, cy - PILL_BAR_H * 0.5, PILL_BAR_W, PILL_BAR_H)
+			draw_rect(bar, Color(1, 1, 1, 0.1 * a))
+			var fw := PILL_BAR_W * float(p["fill"])
+			if fw > 0.5:
+				var ba := a * blink
+				draw_rect(Rect2(bar.position, Vector2(fw, PILL_BAR_H)), Color(col, 0.9 * ba))
+				draw_rect(Rect2(bar.position, Vector2(fw, 2.0)), Color(col.lerp(Color.WHITE, 0.6), 0.9 * ba))
+				FxTex.draw_centered(self, FxTex.glow(), Vector2(bar.position.x + fw, cy), Vector2(18, 18), Color(col.lerp(Color.WHITE, 0.4), 0.8 * ba))
+			x += PILL_BAR_W + 12.0
+			var warn := world.powerup_left < POWERUP_WARN_TIME
+			var sc := Color(1.0, 0.45, 0.35) if warn else C_VALUE
+			_value(Vector2(x + _seconds_width(), UiKit.baseline_for(_f_value, 14, cy)), String(p["seconds"]), 14,
+				Color(sc, a * (blink if warn else 1.0)), HORIZONTAL_ALIGNMENT_RIGHT)
+		"used":
+			_pill(r, C_LABEL, a * 0.7, 0.0)
+			UiKit.text(self, _f_label, Vector2(x, base), pname + "  USED", ls, Color(C_LABEL, 0.75 * a))
+
+
+## Dark rounded pill with a border in `col`; glow 0…1 adds a soft outer light in that colour.
+func _pill(r: Rect2, col: Color, a: float, glow: float) -> void:
+	UiKit.backing(self, r, 0.85 * a)
+	UiKit.panel_ex(self, r, Color(0, 0, 0, 0), Color(col, (0.35 + 0.4 * glow) * a), int(r.size.y * 0.5), 1,
+		Color(col, 0.22 * glow * a), 10)
+
+
 # --- Banners -------------------------------------------------------------------------------------
 func _draw_banners() -> void:
 	if world.state == GameWorld.State.INTRO:
@@ -240,16 +415,39 @@ func _draw_intro(t: float) -> void:
 	draw_texture_rect(FxTex.band(), Rect2(cx - band_w * 0.5, cy - 58.0, band_w, 3.0), false, Color(C_ACCENT, 0.7 * a))
 	draw_texture_rect(FxTex.band(), Rect2(cx - band_w * 0.5, cy + 55.0, band_w, 3.0), false, Color(C_ACCENT, 0.7 * a))
 	if world.is_bonus():
-		UiKit.text(self, _f_label, Vector2(cx, cy - 30.0), "LEVEL %d  ·  BONUS ROUND" % level, UiKit.label_size(13), Color(C_ACCENT, a), HORIZONTAL_ALIGNMENT_CENTER)
+		_text_parts(Vector2(cx, cy - 30.0), intro_caption(), UiKit.label_size(13), a)
 		_glow_text(Vector2(cx, cy + 10.0), LevelData.BONUS_TITLE, 40, a, e)
 		UiKit.text(self, _f_body, Vector2(cx, cy + 42.0), "100 shots – destroy 20 demons", 20, Color(C_VALUE, a), HORIZONTAL_ALIGNMENT_CENTER)
 	else:
-		var planet_name: String = LevelData.PLANET_NAMES[_planet]
-		UiKit.text(self, _f_label, Vector2(cx, cy - 34.0), planet_name.to_upper() + "  ·  " + _difficulty_name(), UiKit.label_size(12),
-			Color(C_ACCENT, a), HORIZONTAL_ALIGNMENT_CENTER)
+		_text_parts(Vector2(cx, cy - 34.0), intro_caption(), UiKit.label_size(12), a)
 		_glow_text(Vector2(cx, cy + 12.0), "LEVEL %d" % level, 54, a, e)
 		UiKit.text(self, _f_body, Vector2(cx, cy + 44.0), String(LevelData.level(level)["name"]).to_upper(), 20,
 			Color(C_VALUE, a), HORIZONTAL_ALIGNMENT_CENTER)
+	if world.powerup != LevelData.PowerUp.NONE:
+		_text_parts(Vector2(cx, cy + POWERUP_LINE_DY), [["POWER-UP:  ", C_LABEL], [powerup_name(world.powerup), powerup_color(world.powerup)]],
+			UiKit.label_size(13), a)
+
+
+## Caption line of the intro banner as [text, colour] parts: "SATURN  ·  NORMAL" (bonus level: "LEVEL 13  ·  BONUS
+## ROUND"); in a two-player match it starts with "PLAYER k" in the player colour (SPEC §19.2).
+func intro_caption() -> Array:
+	var rest := "LEVEL %d  ·  BONUS ROUND" % level if world.is_bonus() \
+		else String(LevelData.PLANET_NAMES[_planet]).to_upper() + "  ·  " + _difficulty_name()
+	if attract or not Run.is_two_player():
+		return [[rest, C_ACCENT]]
+	return [[Run.player_label(Run.current), UiKit.player_color(Run.current)], ["  ·  " + rest, C_ACCENT]]
+
+
+## One centred line made of differently coloured parts ([text, colour] each) in the caption font, faded by `a`.
+func _text_parts(center: Vector2, parts: Array, size: int, a: float) -> void:
+	var total := 0.0
+	for p: Array in parts:
+		total += _f_label.get_string_size(String(p[0]), HORIZONTAL_ALIGNMENT_LEFT, -1, size).x
+	var x := center.x - total * 0.5
+	for p: Array in parts:
+		var c: Color = p[1]
+		UiKit.text(self, _f_label, Vector2(x, center.y), String(p[0]), size, Color(c, c.a * a))
+		x += _f_label.get_string_size(String(p[0]), HORIZONTAL_ALIGNMENT_LEFT, -1, size).x
 
 
 func _glow_text(pos: Vector2, s: String, size: int, a: float, e: float) -> void:

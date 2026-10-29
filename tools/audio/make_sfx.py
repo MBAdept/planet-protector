@@ -237,6 +237,87 @@ def materialize() -> np.ndarray:
 
 
 # ================================================================================================
+# power-ups (SPEC §19.3)
+# ================================================================================================
+def powerup_on() -> np.ndarray:
+	"""Power-up triggered: a resonant two-octave charge-up sweep (E3 -> E5) with a rising noise riser that lands on a
+	bright E power-chord stab with a sub hit and a short shimmer; ping-pong echo, room. ~0.95 s, stereo."""
+	n = ns(0.95)
+	t = dsp.time_axis(n)
+	out = np.zeros((n, 2))
+	rise = 0.22
+	# charge-up: detuned saws gliding up two octaves through an opening resonant low-pass
+	k = np.clip(t / rise, 0.0, 1.0)
+	f = dsp.midi_hz(52) * 2.0 ** (2.0 * k ** 1.6)
+	fc = 500.0 + 6500.0 * k ** 1.3
+	sweep_env = dsp.env_points(n, [(0, 0), (0.01, 0.7), (rise, 1.0), (rise + 0.06, 0.0)], curve=1.5)
+	for d, p in ((-1, -0.5), (1, 0.5)):
+		v = dsp.additive(f * 2 ** (d * 9 / 1200), n, fc, q=3.0, poles=2)
+		out += dsp.pan(v * sweep_env * 0.5, p)
+	riser = dsp.tv_filter(dsp.noise(n, 61), "bp", 900.0 + 7000.0 * k ** 2, q=2.0, block=64)
+	out += dsp.stereo(riser * dsp.env_points(n, [(0, 0), (rise, 0.5), (rise + 0.03, 0.0)], curve=2.0) * 0.35)
+	# landing: bright E5 power chord (E5, B5, E6) of detuned saws with a fast filter decay
+	s0 = ns(rise)
+	cn = n - s0
+	ct = dsp.time_axis(cn)
+	stab = np.zeros((cn, 2))
+	rng = np.random.default_rng(62)
+	fcs = 900.0 + 7000.0 * np.exp(-ct / 0.09)
+	for m in (76, 83, 88):
+		for d in (-1.0, 0.0, 1.0):
+			stab += dsp.pan(dsp.saw(dsp.midi_hz(m) * 2 ** (d * 14 / 1200), cn, rng.random()), d * 0.7)
+	stab = dsp.tv_filter(stab, "lp", fcs, q=1.1, block=64)
+	stab *= dsp.env_points(cn, [(0, 0), (0.004, 1.0), (0.12, 0.45), (cn / SR, 0.0)], curve=2.0)[:, None]
+	dsp.mix_into(out, stab, s0, 0.16)
+	for i, m in enumerate((88, 95)):
+		b = bell(m, cn - ns(0.04 * i), 0.35, 0.8)
+		dsp.mix_into(out, dsp.pan(b, -0.3 + 0.6 * i), s0 + ns(0.04 * i), 0.22)
+	sub = np.sin(dsp.TAU * dsp.phase(50.0 + 100.0 * np.exp(-ct / 0.025), cn)) * dsp.exp_decay(cn, 0.08, 0.001)
+	dsp.mix_into(out, dsp.stereo(sub), s0, 0.45)
+	shimmer = np.stack([dsp.butter(dsp.noise(cn, 63 + c), "bandpass", [6000, 13000], 2) for c in range(2)], axis=1)
+	dsp.mix_into(out, shimmer * dsp.exp_decay(cn, 0.18, 0.003)[:, None], s0, 0.12)
+	out = dsp.saturate(out, 1.3)
+	echo = dsp.delay(out, 0.11, 0.3, 3, 5000, 400)
+	dsp.mix_into(out, dsp.fade(echo[:n], 0.0, 0.2), 0, 0.3)
+	return with_reverb(out, room(), 0.2, 300, 1.1)
+
+
+def powerup_off() -> np.ndarray:
+	"""Power-up over: a 'power-down' - a hollow square tone sliding down an octave and a half through a closing
+	filter with a fading tremolo, over a soft falling whoosh. ~0.65 s, stereo."""
+	n = ns(0.65)
+	t = dsp.time_axis(n)
+	out = np.zeros((n, 2))
+	f = dsp.midi_hz(76) * 2.0 ** (-1.5 * (1.0 - np.exp(-t / 0.18)))
+	fc = 3800.0 * np.exp(-t / 0.2) + 300.0
+	env = dsp.env_points(n, [(0, 0), (0.008, 1.0), (0.25, 0.55), (0.6, 0.0)], curve=1.5)
+	trem = 1.0 - 0.35 * (0.5 + 0.5 * np.sin(dsp.TAU * (14.0 - 8.0 * t / 0.65) * t)) * np.clip(t / 0.15, 0.0, 1.0)
+	for d, p in ((-1, -0.4), (1, 0.4)):
+		v = dsp.additive(f * 2 ** (d * 8 / 1200), n, fc, q=1.8, shape="square", poles=2)
+		out += dsp.pan(v * env * trem * 0.55, p)
+	whoosh = dsp.tv_filter(dsp.pink(n, 71), "bp", 2400.0 * np.exp(-t / 0.15) + 250.0, q=1.4, block=64)
+	out += dsp.stereo(whoosh * dsp.env_points(n, [(0, 0), (0.02, 0.6), (0.5, 0.0)], curve=2.0) * 0.4)
+	out = dsp.saturate(out, 1.4)
+	return with_reverb(out, room(), 0.22, 300, 0.85)
+
+
+def shield_hit() -> np.ndarray:
+	"""A fireball dies on the shield: an electric zap (noise through a resonant band-pass diving 6 kHz -> 1.2 kHz,
+	a buzzing 160 Hz pulse), a short metallic ring and a soft low 'thoomp'. ~0.3 s, mono."""
+	n = ns(0.3)
+	t = dsp.time_axis(n)
+	zap = dsp.tv_filter(dsp.noise(n, 81), "bp", 1200.0 + 4800.0 * np.exp(-t / 0.025), q=4.0, block=32)
+	y = zap * dsp.exp_decay(n, 0.045, 0.0005) * 1.4
+	buzz = dsp.additive(160.0 + 60.0 * np.exp(-t / 0.02), n, 3000.0, q=1.2, shape="square", poles=2)
+	y += buzz * dsp.exp_decay(n, 0.03, 0.0005) * 0.3
+	for f, a, d in ((930.0, 0.45, 0.07), (2310.0, 0.35, 0.05), (3720.0, 0.25, 0.035)):
+		y += np.sin(dsp.TAU * f * t + f) * a * dsp.exp_decay(n, d, 0.0008)
+	y += np.sin(dsp.TAU * dsp.phase(90.0 + 120.0 * np.exp(-t / 0.012), n)) * dsp.exp_decay(n, 0.03) * 0.3
+	y = dsp.saturate(y, 1.6)
+	return to_mono(with_reverb(y, room(), 0.16))
+
+
+# ================================================================================================
 # stingers / ui
 # ================================================================================================
 def bell(midi: float, n: int, decay: float = 0.6, bright: float = 1.0) -> np.ndarray:
@@ -382,6 +463,9 @@ SFX = {
 	"menu_back": (menu_back, -19.5, -6.0),
 	"bonus_tick": (bonus_tick, -21.0, -8.0),
 	"game_over": (game_over, -14.0, -2.0),
+	"powerup_on": (powerup_on, -16.0, -3.0),
+	"powerup_off": (powerup_off, -19.5, -5.0),
+	"shield_hit": (shield_hit, -20.5, -6.0),
 }
 
 

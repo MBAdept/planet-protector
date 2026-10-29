@@ -13,7 +13,7 @@ no samples, no sample packs, no external presets. Implementation: `game/scripts/
 | `music/game/snare.raw`, `atmos.raw` | raw float32 LE, stereo interleaved | snare one-shot; 4-bar atmosphere loop |
 | `music/game/bass.raw` | raw float32 LE, mono | 41 bass notes × 13230 frames (one quarter each), note *s* = E1·2^(s/12) |
 | `music/game/meta.json` | JSON | rate, tempo, frame counts, file list |
-| `sfx/<name>.wav` | 16-bit PCM WAV 44.1 kHz | 16 sound effects; imported **uncompressed** (`compress/mode=0`) |
+| `sfx/<name>.wav` | 16-bit PCM WAV 44.1 kHz | 19 sound effects; imported **uncompressed** (`compress/mode=0`) |
 
 `*.raw` and `*.json` are in the export include filter; Godot never imports them, so they arrive bit-exact
 (read with `FileAccess.get_file_as_bytes().to_float32_array()`). This avoids relying on `AudioStreamWAV.data`.
@@ -92,6 +92,9 @@ Loudness targets (≈LUFS, BS.1770 K-weighting) balance the mix: frequent sounds
 | `menu_move` / `menu_confirm` / `menu_back` | soft blip / rising two-tone / falling two-tone | −21 / −18 / −19.5 | |
 | `bonus_tick` | very short bright tick for counting | −21 | −8 |
 | `game_over` | sinking distorted low drone, falling minor bells, long hall | −14 | −2 |
+| `powerup_on` | power-up triggered (SPEC §19.3): resonant two-octave charge-up sweep E3 → E5 with a noise riser, landing on a bright E5 power-chord stab + bells, sub hit and shimmer, short echo | −16 | −3 |
+| `powerup_off` | power-up over: hollow square tone sliding down 1.5 octaves through a closing filter, fading tremolo, soft falling whoosh | −19.5 | −5 |
+| `shield_hit` | fireball absorbed by the shield: electric zap (noise through a resonant band-pass diving 6 → 1.2 kHz, 160 Hz buzz), short metallic ring, soft thump | −20.5 | −6 |
 
 ## AudioManager (runtime mixing)
 
